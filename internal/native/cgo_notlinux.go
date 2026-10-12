@@ -1,6 +1,13 @@
-//go:build !linux
+//go:build !linux || vim4
 
 package native
+
+func uiInit(rotation uint16)         { panicPlatformNotSupported() }
+func uiTick()                        { panicPlatformNotSupported() }
+func videoInit(factor float64) error { panicPlatformNotSupported(); return nil }
+func videoShutdown()                 { panicPlatformNotSupported() }
+func videoStart()                    { panicPlatformNotSupported() }
+func videoStop()                     { panicPlatformNotSupported() }
 
 func panicPlatformNotSupported() {
 	panic("platform not supported")

@@ -111,6 +111,9 @@ func softConnect(udc string) error {
 }
 
 func (u *UsbGadget) SoftReconnect() error {
+	if u.systemManaged {
+		return fmt.Errorf("gadget is managed by the board service")
+	}
 	u.configLock.Lock()
 	defer u.configLock.Unlock()
 
@@ -150,6 +153,9 @@ func (u *UsbGadget) rebindUsb(ignoreUnbindError bool) error {
 
 // RebindUsb rebinds the USB gadget to the UDC.
 func (u *UsbGadget) RebindUsb(ignoreUnbindError bool) error {
+	if u.systemManaged {
+		return fmt.Errorf("gadget is managed by the board service")
+	}
 	return u.rebindUsbWith(func() error { return u.rebindUsb(ignoreUnbindError) })
 }
 
@@ -233,6 +239,9 @@ func (u *UsbGadget) SetEmulationEnabled(enabled bool) error {
 
 // BindUDC binds the gadget to the UDC.
 func (u *UsbGadget) BindUDC() error {
+	if u.systemManaged {
+		return fmt.Errorf("gadget is managed by the board service")
+	}
 	err := os.WriteFile(path.Join(dwc3Path, "bind"), []byte(u.udc), 0644)
 	if err != nil {
 		return fmt.Errorf("error binding UDC: %w", err)
@@ -242,6 +251,9 @@ func (u *UsbGadget) BindUDC() error {
 
 // UnbindUDC unbinds the gadget from the UDC.
 func (u *UsbGadget) UnbindUDC() error {
+	if u.systemManaged {
+		return fmt.Errorf("gadget is managed by the board service")
+	}
 	_ = softDisconnect(u.udc)
 	err := os.WriteFile(path.Join(dwc3Path, "unbind"), []byte(u.udc), 0644)
 	if err != nil {

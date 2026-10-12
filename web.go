@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jetkvm/kvm/internal/platform"
 	"io"
 	"io/fs"
 	"net"
@@ -102,6 +103,9 @@ func setupRouter() *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DisableConsoleColor()
 	r := gin.Default()
+	if platform.VIM4 {
+		r.Use(vim4HTTP)
+	}
 	// The device is reached directly, not behind a reverse proxy, so don't
 	// trust any X-Forwarded-For/X-Real-IP headers. Without this, gin trusts
 	// all proxies by default and c.ClientIP() returns a client-controlled

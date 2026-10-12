@@ -3,6 +3,7 @@ package kvm
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jetkvm/kvm/internal/platform"
 	"io"
 	"os"
 	"strconv"
@@ -154,7 +155,7 @@ func (c *Config) SetDisplayRotation(rotation string) error {
 	return nil
 }
 
-const configPath = "/userdata/kvm_config.json"
+const configPath = platform.ConfigPath
 
 // it's a temporary solution to avoid sharing the same pointer
 // we should migrate to a proper config solution in the future

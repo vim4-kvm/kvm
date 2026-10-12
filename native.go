@@ -26,7 +26,7 @@ func initNative(systemVersion *semver.Version, appVersion *semver.Version) {
 
 	nativeLogger.Info().Msg("initializing native proxy")
 	var err error
-	nativeInstance, err = native.NewNativeProxy(native.NativeOptions{
+	nativeInstance, err = native.NewBackend(native.NativeOptions{
 		SystemVersion:        systemVersion,
 		AppVersion:           appVersion,
 		DisplayRotation:      config.GetDisplayRotation(),

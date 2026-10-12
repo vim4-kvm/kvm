@@ -3,6 +3,7 @@ package kvm
 import (
 	"context"
 	"fmt"
+	"github.com/jetkvm/kvm/internal/platform"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,6 +29,10 @@ func setProcTitle(status string) {
 }
 
 func Main() {
+	if platform.VIM4 {
+		mainVIM4()
+		return
+	}
 	setProcTitle("starting")
 
 	logger.Log().Msg("JetKVM Starting Up")

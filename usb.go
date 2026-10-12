@@ -2,6 +2,7 @@ package kvm
 
 import (
 	"fmt"
+	"github.com/jetkvm/kvm/internal/platform"
 	"sync"
 	"time"
 
@@ -29,12 +30,19 @@ func effectiveAudioEnabled() bool {
 // initUsbGadget initializes the USB gadget.
 // call it only after the config is loaded.
 func initUsbGadget() {
-	gadget = usbgadget.NewUsbGadget(
-		"jetkvm",
-		effectiveUsbDevices(),
-		config.UsbConfig,
-		usbLogger,
-	)
+	if platform.VIM4 {
+		gadget = usbgadget.OpenSystemGadget(usbLogger)
+	} else {
+		gadget = usbgadget.NewUsbGadget(
+			"jetkvm",
+			effectiveUsbDevices(),
+			config.UsbConfig,
+			usbLogger,
+		)
+	}
+	if gadget == nil {
+		usbLogger.Fatal().Msg("failed to initialize USB gadget")
+	}
 
 	setUSBRecoveryTimer(time.Now())
 
@@ -390,6 +398,18 @@ func attemptUSBEnumerationRecovery(state string) string {
 
 func checkUSBState() {
 	newState := gadget.GetUsbState()
+	if platform.VIM4 {
+		usbStateLock.Lock()
+		changed := usbState != newState
+		usbState = newState
+		usbStateLock.Unlock()
+		if changed {
+			gadget.ResetHIDFiles()
+			_ = gadget.OpenKeyboardHidFile()
+			triggerUSBStateUpdate()
+		}
+		return
+	}
 	newState = attemptUSBEnumerationRecovery(newState)
 	if newState == usbgadget.USBStateNotAttached {
 		newState = attemptUSBRecovery(newState)

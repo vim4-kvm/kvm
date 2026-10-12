@@ -1,0 +1,22 @@
+[Unit]
+Description=VIM4 KVM web application
+Requires=vim4-kvm-hdmi.service vim4-kvm-gadget.service vim4-kvm-pd.service
+After=network-online.target vim4-kvm-hdmi.service vim4-kvm-gadget.service vim4-kvm-pd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=khadas
+Group=khadas
+SupplementaryGroups=video input
+StateDirectory=vim4-kvm
+WorkingDirectory=/var/lib/vim4-kvm
+ExecStart=/usr/local/bin/vim4-kvm
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+# amlvenc uses a shared lock file in /tmp. All encoder users must use khadas.
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target

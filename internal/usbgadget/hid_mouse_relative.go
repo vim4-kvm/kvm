@@ -2,6 +2,7 @@ package usbgadget
 
 import (
 	"fmt"
+	"github.com/jetkvm/kvm/internal/vim4hid"
 	"os"
 	"time"
 )
@@ -97,16 +98,25 @@ func (u *UsbGadget) RelMouseReport(mx int8, my int8, buttons uint8) error {
 	u.relMouseLock.Lock()
 	defer u.relMouseLock.Unlock()
 
-	err := u.relMouseWriteHidFile([]byte{
+	data := []byte{
 		buttons,  // Buttons
 		byte(mx), // X
 		byte(my), // Y
 		0,        // Wheel
 		0,        // AC Pan (Horizontal Scroll)
-	})
+	}
+	if u.systemManaged {
+		report, err := vim4hid.Relative(mx, my, buttons, 0)
+		if err != nil {
+			return err
+		}
+		data = report[:]
+	}
+	err := u.relMouseWriteHidFile(data)
 	if err != nil {
 		return err
 	}
+	u.relButtons = buttons
 
 	u.resetUserInputTime()
 	return nil
@@ -125,6 +135,16 @@ func (u *UsbGadget) RelMouseWheelReport(wheelY int8, wheelX int8) error {
 
 	if wheelY == 0 && wheelX == 0 {
 		return nil
+	}
+	if u.systemManaged {
+		if wheelX != 0 {
+			return fmt.Errorf("horizontal scrolling is not supported")
+		}
+		report, err := vim4hid.Relative(0, 0, u.relButtons, wheelY)
+		if err != nil {
+			return err
+		}
+		return u.relMouseWriteHidFile(report[:])
 	}
 
 	err := u.relMouseWriteHidFile([]byte{

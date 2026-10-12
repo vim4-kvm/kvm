@@ -3,6 +3,7 @@ package kvm
 import (
 	"context"
 	"fmt"
+	"github.com/jetkvm/kvm/internal/platform"
 	"net/http"
 	"os"
 	"strings"
@@ -78,6 +79,9 @@ func GetLocalVersion() (systemVersion *semver.Version, appVersion *semver.Versio
 		return nil, nil, fmt.Errorf("invalid built-in app version: %w", err)
 	}
 
+	if platform.VIM4 {
+		return semver.MustParse("0.0.0"), appVersion, nil
+	}
 	systemVersionBytes, err := os.ReadFile("/version")
 	if err != nil {
 		return nil, appVersion, fmt.Errorf("error reading system version: %w", err)

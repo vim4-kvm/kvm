@@ -2,6 +2,7 @@ package kvm
 
 import (
 	"fmt"
+	"github.com/jetkvm/kvm/internal/platform"
 	"os"
 	"os/exec"
 	"regexp"
@@ -13,7 +14,11 @@ import (
 )
 
 func extractSerialNumber() (string, error) {
-	content, err := os.ReadFile("/proc/cpuinfo")
+	infoPath := "/proc/cpuinfo"
+	if platform.VIM4 {
+		infoPath = "/proc/cpu_chipid"
+	}
+	content, err := os.ReadFile(infoPath)
 	if err != nil {
 		return "", err
 	}
@@ -84,6 +89,9 @@ var deviceSKU string
 var deviceSKUOnce sync.Once
 
 func GetDeviceSKU() string {
+	if platform.VIM4 {
+		return "vim4"
+	}
 	deviceSKUOnce.Do(func() {
 		content, err := os.ReadFile("/etc/jetkvm-sku")
 		if err != nil || strings.TrimSpace(string(content)) == "" {

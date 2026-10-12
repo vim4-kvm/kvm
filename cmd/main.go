@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/jetkvm/kvm/internal/platform"
 	"io"
 	"os"
 	"os/exec"
@@ -62,6 +63,10 @@ func main() {
 		return
 	}
 
+	if platform.VIM4 {
+		kvm.Main()
+		return
+	}
 	childID := os.Getenv(supervisor.EnvChildID)
 	switch childID {
 	case "":

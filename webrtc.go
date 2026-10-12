@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/jetkvm/kvm/internal/platform"
 	"net"
 	"strings"
 	"time"
@@ -189,6 +190,9 @@ func drainRTCP(sender *webrtc.RTPSender) {
 // resolveCodec picks the video codec based on user preference and browser support.
 // Always validates against the browser's SDP offer to prevent negotiation failure.
 func resolveCodec(offerSDP string) string {
+	if platform.VIM4 {
+		return webrtc.MimeTypeH264
+	}
 	browserSupportsH265 := strings.Contains(strings.ToUpper(offerSDP), "H265")
 
 	switch config.VideoCodecPreference {
@@ -557,6 +561,10 @@ func newSession(config SessionConfig) (*Session, error) {
 		}()
 
 		scopedLogger.Info().Str("label", d.Label()).Uint16("id", *d.ID()).Msg("New DataChannel")
+		if platform.VIM4 && d.Label() != "rpc" && !strings.HasPrefix(d.Label(), "hidrpc") {
+			_ = d.Close()
+			return
+		}
 
 		switch d.Label() {
 		case "hidrpc":
@@ -576,7 +584,9 @@ func newSession(config SessionConfig) (*Session, error) {
 			// Wait for channel to be open before sending initial state
 			d.OnOpen(func() {
 				go reportLocalVersionAndCapabilities(session)
-				triggerOTAStateUpdate(otaState.ToRPCState())
+				if otaState != nil {
+					triggerOTAStateUpdate(otaState.ToRPCState())
+				}
 				triggerVideoStateUpdate()
 				triggerUSBStateUpdate()
 				notifyFailsafeMode(session)
@@ -740,6 +750,9 @@ func onSessionConnected(session *Session) {
 }
 
 func onLastSessionDisconnected() {
+	if platform.VIM4 {
+		gadget.ReleaseMouseButtons()
+	}
 	// Safety net: ensure all keys are released when the last session disconnects
 	_ = rpcKeyboardReport(0, keyboardClearStateKeys)
 	// The closing session already released its own audio capture. A replacement

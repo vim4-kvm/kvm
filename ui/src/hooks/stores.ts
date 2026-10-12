@@ -743,6 +743,7 @@ export interface DeviceState {
 
 // Optional device features reported by getDeviceCapabilities.
 export type Capability =
+  | "basic_kvm" // video and HID only; system settings remain externally managed
   | "shell"
   | "extensions"
   | "usb_serial"

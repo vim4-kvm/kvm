@@ -58,6 +58,7 @@ export default function Actionbar({
   const { width: videoWidth, height: videoHeight } = useVideoStore();
   const { developerMode } = useSettingsStore();
   const shell = useCapability("shell");
+  const basicKvm = useCapability("basic_kvm");
   const kvmTerminal = developerMode && shell;
   const extensions = useCapability("extensions");
   const usbSerial = useCapability("usb_serial");
@@ -171,7 +172,7 @@ export default function Actionbar({
               }}
             </PopoverPanel>
           </Popover>
-          <div className="relative">
+          {!basicKvm && <div className="relative">
             <Popover>
               <PopoverButton as={Fragment}>
                 <Button
@@ -213,8 +214,8 @@ export default function Actionbar({
                 }}
               </PopoverPanel>
             </Popover>
-          </div>
-          <div>
+          </div>}
+          {!basicKvm && <div>
             <Popover>
               <PopoverButton as={Fragment}>
                 <Button
@@ -265,7 +266,7 @@ export default function Actionbar({
                 }}
               </PopoverPanel>
             </Popover>
-          </div>
+          </div>}
           <div className="hidden lg:block">
             <Button
               size="XS"
@@ -329,7 +330,7 @@ export default function Actionbar({
               }}
             />
           </div>
-          {!isEmbedMode && (
+          {!isEmbedMode && !basicKvm && (
             <div>
               <Button
                 size="XS"

@@ -3,6 +3,7 @@ package kvm
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/jetkvm/kvm/internal/platform"
 	"html/template"
 	"runtime"
 	"strings"
@@ -34,7 +35,10 @@ func GetVersionData(isJson bool) ([]byte, error) {
 		"platform":  runtime.GOOS + "/" + runtime.GOARCH,
 	}
 
-	lvglVersion := native.GetLVGLVersion()
+	lvglVersion := ""
+	if !platform.VIM4 {
+		lvglVersion = native.GetLVGLVersion()
+	}
 	if lvglVersion != "" {
 		m["lvglVersion"] = lvglVersion
 	}

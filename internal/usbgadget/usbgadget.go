@@ -53,6 +53,7 @@ type KeysDownState struct {
 
 // UsbGadget is a struct that represents a USB gadget.
 type UsbGadget struct {
+	systemManaged bool
 	name          string
 	udc           string
 	kvmGadgetPath string
@@ -72,15 +73,17 @@ type UsbGadget struct {
 	// nil uses os.OpenFile; overridden by lifecycle tests without device access.
 	hidOpenFile func(string, int, os.FileMode) (*os.File, error)
 
-	keyboardHidFile *os.File
-	keyboardLock    sync.Mutex
-	wakeHidFile     *os.File
-	wakeHidLock     sync.Mutex
-	absMouseHidFile *os.File
-	absMouseLock    sync.Mutex
-	absMousePressed bool
-	relMouseHidFile *os.File
-	relMouseLock    sync.Mutex
+	keyboardHidFile        *os.File
+	keyboardLock           sync.Mutex
+	wakeHidFile            *os.File
+	wakeHidLock            sync.Mutex
+	absMouseHidFile        *os.File
+	absMouseLock           sync.Mutex
+	absMousePressed        bool
+	absX, absY             int
+	absButtons, relButtons uint8
+	relMouseHidFile        *os.File
+	relMouseLock           sync.Mutex
 
 	keyboardState byte          // keyboard latched state (NumLock, CapsLock, ScrollLock, Compose, Kana)
 	keysDownState KeysDownState // keyboard dynamic state (modifier keys and pressed keys)
@@ -126,6 +129,16 @@ func NewUsbGadget(name string, enabledDevices *Devices, config *Config, logger *
 }
 
 func newUsbGadget(name string, configMap map[string]gadgetConfigItem, enabledDevices *Devices, config *Config, logger *zerolog.Logger) *UsbGadget {
+	return newGadget(name, configMap, enabledDevices, config, logger, false)
+}
+
+// OpenSystemGadget opens the VIM4 gadget without changing configfs or its UDC.
+func OpenSystemGadget(logger *zerolog.Logger) *UsbGadget {
+	devices := &Devices{Keyboard: true, AbsoluteMouse: true, RelativeMouse: true}
+	return newGadget("kvm", defaultGadgetConfig, devices, nil, logger, true)
+}
+
+func newGadget(name string, configMap map[string]gadgetConfigItem, enabledDevices *Devices, config *Config, logger *zerolog.Logger, managed bool) *UsbGadget {
 	if logger == nil {
 		logger = defaultLogger
 	}
@@ -141,6 +154,7 @@ func newUsbGadget(name string, configMap map[string]gadgetConfigItem, enabledDev
 	keyboardCtx, keyboardCancel := context.WithCancel(context.Background())
 
 	g := &UsbGadget{
+		systemManaged:        managed,
 		name:                 name,
 		kvmGadgetPath:        path.Join(gadgetPath, name),
 		configC1Path:         path.Join(gadgetPath, name, "configs/c.1"),

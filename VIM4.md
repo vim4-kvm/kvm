@@ -1,44 +1,96 @@
 # VIM4 integration
 
-Status: initial integration branch; the full application is not yet runnable on
-VIM4. The report encoder is tested in isolation and is not yet wired to RPC.
-Keep the existing board services running until the integration passes hardware
-acceptance. Preserve the license, copyright notices and existing authorship.
+The `vim4` build runs the device web UI, H.264 WebRTC video and keyboard/mouse
+input on Ubuntu ARM64. Board services own HDMI setup, USB gadget creation and
+USB-C PD negotiation. Preserve licenses and existing authorship.
 
-## Hardware boundaries
+## Build and install
 
-| Area | Existing application | VIM4 integration |
-| --- | --- | --- |
-| Video | `internal/native/cgo_linux.go` links `jknative` and LVGL; video uses Rockchip APIs | Separate native backend using `vfmcapsrc ! amlvenc ! h264parse ! appsink` |
-| WebRTC | `native.go` submits encoded frames through `VideoTrack.WriteSample` | Deliver complete H.264 access units with buffer timing; repeat SPS/PPS at IDR for new viewers |
-| Display | Native interface also controls local touchscreen | Headless backend; unsupported controls must not claim success |
-| USB | `usb.go` creates and manages its own gadget | Board service owns configfs and PD; application only opens existing HID endpoints |
-| Mouse | Absolute report includes an ID; relative report includes horizontal wheel | `internal/vim4hid` matches the installed six/four-byte descriptors without IDs |
-| Network | `main.go` calls `initNetwork` | Ubuntu retains ownership of Ethernet and DHCP |
-| Updates | Startup initializes OTA and periodic update checks; RPC also exposes updates | Disable firmware/system updates on this platform, including RPC routes |
-| Storage | Configuration uses `/userdata/kvm_config.json` | Use a dedicated Ubuntu state directory with explicit ownership |
-| Watchdog | Startup opens `/dev/watchdog` | Leave disabled until shutdown and restart behavior is verified |
+Build the UI with Node 22.21.1 and npm, then copy the source and generated
+`static/` directory to the board:
 
-Do not launch the unmodified main program as root on the board. Selecting ARM64
-alone does not isolate hardware initialization or remove the native libraries.
+```sh
+npm ci --prefix ui --ignore-scripts
+npm --prefix ui run build:device
+```
 
-## First usable milestone
+On the Ubuntu VIM4:
 
-1. Add a Linux ARM64 backend with explicit build selection. Exclude Rockchip and
-   LVGL linkage. Keep existing web authentication, signaling and browser UI.
-2. Read encoded buffers through appsink with access-unit alignment and valid
-   timestamps. Handle EOS, signal loss and process shutdown; do not treat pipe
-   reads as frame boundaries. Validate codec/profile negotiation in the browser.
-3. Connect HID RPC to the installed gadget, including bounded writes, release on
-   disconnect, reopen after re-enumeration, and keyboard LED feedback. Reject
-   unsupported horizontal scrolling instead of appending extra report bytes.
-4. Isolate system management before starting the web service. Disable unsupported
-   UI actions as well as backend routes; a default config flag is insufficient.
-5. Verify browser video and keyboard/mouse on the Mac, then disconnect/reconnect
-   the browser and reboot the board. Capture frame rate and latency as measured
-   results, not inherited performance claims.
+```sh
+sudo apt-get install golang-go build-essential pkg-config \
+  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libasound2-dev
+go test -tags vim4 ./...
+go build -tags vim4 -o /tmp/vim4-kvm ./cmd
+sudo sh deploy/vim4/install.sh /tmp/vim4-kvm
+```
 
-## Current checks
+Go selects the toolchain specified in go.mod. The service listens on port
+**8080**. Open http://192.168.50.210:8080 and complete local authentication setup.
+Configuration lives in `/var/lib/vim4-kvm/config.json`. The test board uses local
+passwordless mode; the Ubuntu account and password are unchanged.
 
-`go test ./internal/vim4hid` checks wire layout and descriptor range boundaries.
-This does not establish browser-to-host input or a working video backend.
+Prerequisites: working vfmcapsrc and amlvenc plugins, vim4-kvm-hdmi.service,
+vim4-kvm-gadget.service, vim4-kvm-pd.service, and the eight/six/four-byte HID
+descriptors installed by the board gadget script.
+
+The application runs as **khadas**, with video/input group access. The udev rule
+grants input group access to hidg0–2. Use the same account for encoder tests:
+the vendor encoder uses `/tmp/vpu_mutex.map`. On this Ubuntu installation, root
+opening the existing khadas-owned file with O_CREAT is denied by sticky
+directory protection, and root capture crashes. Do not delete the lock while an
+encoder is active or give the service a private /tmp.
+
+## Implementation
+
+| Area | VIM4 behavior |
+| --- | --- |
+| Video | `internal/native/backend_vim4.go` uses vfmcapsrc → amlvenc → h264parse → appsink, with complete H.264 access units and SPS/PPS repeated at IDR |
+| WebRTC | Existing VideoTrack.WriteSample path; actual PTS spacing overrides the encoder's incorrect nominal 30 fps duration |
+| Native libraries | vim4 build excludes Rockchip/LVGL linkage and uses an in-process headless backend |
+| USB | Opens existing HID endpoints without creating, rebinding or rewriting the system-managed gadget |
+| Input | Matches installed mouse descriptors; preserves position/buttons during wheel events; releases held buttons on last-client disconnect |
+| System | Ubuntu retains network, clock, watchdog and system update ownership |
+| API | RPC allowlist and HTTP/data-channel restrictions exclude system management, terminal, upload and extension operations |
+| UI | Basic KVM capability hides virtual media, Wake-on-LAN and settings toolbar entries |
+
+Capture runs while a WebRTC session needs it. Cancellation, EOS and errors
+release the pipeline and DMA-bufs. Appsink does not arbitrarily drop encoded
+buffers, which would break prediction within a GOP.
+
+## Validation
+
+On 2026-10-12:
+
+- Full `go test -tags vim4 ./...` passed on the ARM64 board.
+- UI TypeScript check and device build passed. Validation used Node 26; the
+  package declares Node 22 and emitted an engine warning.
+- Capture produced 300 decodable 1920×1080 H.264 frames in 5.017 seconds of media
+  time. ffprobe reported 60 fps.
+- Headless Chrome decoded 180 additional frames over three seconds, with one
+  additional dropped frame during that interval. This is not a latency measurement.
+- WebRTC keyboard RPC set and released Shift on the Mac: flags 0 → 131072 → 0.
+  Absolute pointer reached the display center; relative motion moved it right.
+- Browser reload re-established video and reopened the hardware encoder.
+- Whole-board reboot started PD, HDMI, gadget and web services automatically.
+  UDC returned to configured; browser video, UI Shift input and both mouse
+  reports worked again without manual initialization. Post-reboot Chrome decoded
+  181 frames over three seconds, with two additional dropped frames.
+
+For isolated capture testing, first stop the web application to avoid opening
+the encoder twice, then run as khadas:
+
+```sh
+go build -tags vim4 -o /tmp/vim4-capture ./cmd/vim4-capture
+/tmp/vim4-capture -output /tmp/vim4-capture.h264
+ffprobe -v error -count_frames -show_entries \
+  stream=width,height,r_frame_rate,nb_read_frames /tmp/vim4-capture.h264
+```
+
+## Current limits
+
+H.264 only; fixed service-configured output size and 8 Mbps encoder setting.
+Audio, virtual media, cloud access, system settings, EDID updates, horizontal
+scrolling and automatic HDMI error recovery are not implemented. Reconnect the
+viewer to restart capture after a pipeline error. HDMI hotplug, resolution changes
+through WebRTC, browser handover, USB hotplug and cold boot need dedicated
+end-to-end testing.

@@ -140,7 +140,9 @@ func (u *UsbGadget) writeWithTimeout(file *os.File, data []byte) (n int, err err
 			"write timed out: %s",
 			file.Name(),
 		)
-		err = nil
+		if !u.systemManaged {
+			err = nil
+		}
 	}
 
 	return

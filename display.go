@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jetkvm/kvm/internal/platform"
 	"os"
 	"strconv"
 	"strings"
@@ -182,6 +183,9 @@ var (
 )
 
 func requestDisplayUpdate(shouldWakeDisplay bool, reason string) {
+	if platform.VIM4 {
+		return
+	}
 	displayUpdateLock.Lock()
 	defer displayUpdateLock.Unlock()
 

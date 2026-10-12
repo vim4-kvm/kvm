@@ -2,6 +2,7 @@ package usbgadget
 
 import (
 	"fmt"
+	"github.com/jetkvm/kvm/internal/vim4hid"
 	"os"
 	"time"
 )
@@ -109,17 +110,26 @@ func (u *UsbGadget) AbsMouseReport(x int, y int, buttons uint8) error {
 	u.absMouseLock.Lock()
 	defer u.absMouseLock.Unlock()
 
-	err := u.absMouseWriteHidFile([]byte{
+	data := []byte{
 		1,            // Report ID 1
 		buttons,      // Buttons
 		byte(x),      // X Low Byte
 		byte(x >> 8), // X High Byte
 		byte(y),      // Y Low Byte
 		byte(y >> 8), // Y High Byte
-	})
+	}
+	if u.systemManaged {
+		report, err := vim4hid.Absolute(x, y, buttons, 0)
+		if err != nil {
+			return err
+		}
+		data = report[:]
+	}
+	err := u.absMouseWriteHidFile(data)
 	if err != nil {
 		return err
 	}
+	u.absX, u.absY, u.absButtons = x, y, buttons
 
 	if pressed := buttons != 0; pressed != u.absMousePressed {
 		u.absMousePressed = pressed
@@ -146,6 +156,16 @@ func (u *UsbGadget) AbsMouseWheelReport(wheelY int8, wheelX int8) error {
 	// Only send a report if at least one value is non-zero
 	if wheelY == 0 && wheelX == 0 {
 		return nil
+	}
+	if u.systemManaged {
+		if wheelX != 0 {
+			return fmt.Errorf("horizontal scrolling is not supported")
+		}
+		report, err := vim4hid.Absolute(u.absX, u.absY, u.absButtons, wheelY)
+		if err != nil {
+			return err
+		}
+		return u.absMouseWriteHidFile(report[:])
 	}
 
 	err := u.absMouseWriteHidFile([]byte{

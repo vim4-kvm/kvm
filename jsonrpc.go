@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jetkvm/kvm/internal/platform"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -129,6 +130,9 @@ func onRPCMessage(message webrtc.DataChannelMessage, session *Session) {
 	t := time.Now()
 
 	handler, ok := rpcHandlers[request.Method]
+	if platform.VIM4 && !vim4RPCSupported(request.Method) {
+		ok = false
+	}
 	if !ok {
 		errorResponse := JSONRPCResponse{
 			JSONRPC: "2.0",
@@ -200,6 +204,9 @@ func rpcSetStreamQualityFactor(factor float64) error {
 }
 
 func rpcGetSupportedVideoCodecs() []string {
+	if platform.VIM4 {
+		return []string{"h264"}
+	}
 	return []string{"h264", "h265"}
 }
 
@@ -426,6 +433,9 @@ type SSHKeyState struct {
 // the loopback-only setting and the default log level (Advanced page) and the
 // Tailscale card (Network page), each shown only when reported.
 func rpcGetDeviceCapabilities() ([]string, error) {
+	if platform.VIM4 {
+		return []string{"basic_kvm"}, nil
+	}
 	return []string{
 		"shell", "extensions", "usb_serial", "custom_edid", "upload_channel", "video_during_update",
 		"http_proxy", "domain", "mdns", "ipv6",

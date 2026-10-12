@@ -2,7 +2,10 @@ package usbgadget
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path"
+	"strings"
 )
 
 type gadgetConfigItem struct {
@@ -175,6 +178,17 @@ func mountConfigFS(path string) error {
 }
 
 func (u *UsbGadget) Init() error {
+	if u.systemManaged {
+		data, err := os.ReadFile(path.Join(u.kvmGadgetPath, "UDC"))
+		if err != nil {
+			return err
+		}
+		u.udc = strings.TrimSpace(string(data))
+		if u.udc == "" {
+			return fmt.Errorf("system-managed gadget is unbound")
+		}
+		return nil
+	}
 	u.configLock.Lock()
 	defer u.configLock.Unlock()
 
@@ -203,6 +217,9 @@ func (u *UsbGadget) Init() error {
 }
 
 func (u *UsbGadget) UpdateGadgetConfig() error {
+	if u.systemManaged {
+		return fmt.Errorf("gadget is managed by the board service")
+	}
 	u.configLock.Lock()
 	defer u.configLock.Unlock()
 
@@ -221,6 +238,9 @@ func (u *UsbGadget) UpdateGadgetConfig() error {
 // configureUsbGadget reports whether it left an already matching, attached
 // gadget bound instead of rebinding it.
 func (u *UsbGadget) configureUsbGadget(resetUsb bool, forceRebind bool) (bool, error) {
+	if u.systemManaged {
+		return false, fmt.Errorf("gadget is managed by the board service")
+	}
 	var adopted bool
 	// Recovery can fall back here after a public rebind fails. Keep the entire
 	// transaction behind the same drain gate, including its controller writes.
