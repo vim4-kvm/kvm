@@ -86,9 +86,40 @@ ffprobe -v error -count_frames -show_entries \
   stream=width,height,r_frame_rate,nb_read_frames /tmp/vim4-capture.h264
 ```
 
+## Capture resolution
+
+The board HDMI service defaults to 3840×2160 NV21 capture. The application uses
+H.264 at 12 Mbps, the stock encoder plugin's maximum, with a 30-frame GOP.
+Frame pacing follows input timestamps; selecting 4K does not manufacture 60 fps
+from a slower HDMI source. The current test source supplies 2160p60.
+
+To reduce bandwidth or decoder load, put the following in
+`/etc/default/vim4-kvm-hdmi` on the board:
+
+```sh
+HDMI_WIDTH=1920
+HDMI_HEIGHT=1080
+```
+
+Supported sizes are 3840×2160, 1920×1080 and 1280×720. Stop `vim4-kvm`, restart
+`vim4-kvm-hdmi`, then start `vim4-kvm` and refresh the viewer. Remove the override
+to restore 4K. Changing the service configuration persists across reboots.
+The 1080p fallback and return to 4K were verified through the browser.
+
+The [vendor specifications](https://www.khadas.com/vim4) list 4K60 HDMI input
+but 4K50 encoding. On this board, a steady
+600-frame 3840×2160 H.264 capture completed in 10.126 seconds. This is measured
+behavior, not a guarantee of lossless 4K60 playback for all content or browsers.
+12 Mbps can limit image quality during complex motion at 4K.
+
+After a whole-board reboot, Chrome received 601 additional video frames over
+10 seconds at 3840×2160 and dropped 30 during playback (about 57 presented fps).
+Reload restored 4K video. PD, HDMI, gadget and web services were active, and the
+USB controller was configured. This test did not benchmark complex moving content.
+
 ## Current limits
 
-H.264 only; fixed service-configured output size and 8 Mbps encoder setting.
+H.264 only; service-configured output size and 12 Mbps encoder setting.
 Audio, virtual media, cloud access, system settings, EDID updates, horizontal
 scrolling and automatic HDMI error recovery are not implemented. Reconnect the
 viewer to restart capture after a pipeline error. HDMI hotplug, resolution changes

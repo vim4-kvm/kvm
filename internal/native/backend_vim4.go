@@ -102,7 +102,8 @@ func (v *vim4Backend) capture(ctx context.Context, done chan struct{}) {
 	defer close(done)
 	lastState := VideoState{}
 	frameCount := 0
-	err := gstcapture.Run(ctx, "vfmcapsrc ! queue max-size-buffers=3 max-size-bytes=0 max-size-time=0 ! amlvenc bitrate=8000 gop=30 ! video/x-h264 ! h264parse config-interval=-1 ! video/x-h264,stream-format=byte-stream,alignment=au ! appsink name=frames sync=false", func(frame gstcapture.Frame) error {
+	// Use the encoder's maximum supported bitrate for 4K desktop detail.
+	err := gstcapture.Run(ctx, "vfmcapsrc ! queue max-size-buffers=3 max-size-bytes=0 max-size-time=0 ! amlvenc bitrate=12000 gop=30 ! video/x-h264 ! h264parse config-interval=-1 ! video/x-h264,stream-format=byte-stream,alignment=au ! appsink name=frames sync=false", func(frame gstcapture.Frame) error {
 		duration := frame.Duration
 		if duration <= 0 {
 			duration = time.Second / 60
