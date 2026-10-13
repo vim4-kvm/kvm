@@ -130,7 +130,7 @@ func onRPCMessage(message webrtc.DataChannelMessage, session *Session) {
 	t := time.Now()
 
 	handler, ok := rpcHandlers[request.Method]
-	if platform.VIM4 && !vim4RPCSupported(request.Method) {
+	if platform.VIM4 && vim4RPCUnsupported(request.Method) {
 		ok = false
 	}
 	if !ok {
@@ -204,9 +204,6 @@ func rpcSetStreamQualityFactor(factor float64) error {
 }
 
 func rpcGetSupportedVideoCodecs() []string {
-	if platform.VIM4 {
-		return []string{"h264"}
-	}
 	return []string{"h264", "h265"}
 }
 
@@ -239,7 +236,8 @@ func rpcSetAutoUpdateState(enabled bool) (bool, error) {
 }
 
 func rpcGetEDID() (string, error) {
-	if !isHostDisplayAdvertised() {
+	// The VIM4 receiver cannot report its table; the application loads it.
+	if platform.VIM4 || !isHostDisplayAdvertised() {
 		return configuredVideoEDID(), nil
 	}
 
@@ -409,9 +407,8 @@ func rpcSetAudioConfig(params AudioConfig) error {
 }
 
 const (
-	devModeFile = "/userdata/jetkvm/devmode.enable"
-	sshKeyDir   = "/userdata/dropbear/.ssh"
-	sshKeyFile  = "/userdata/dropbear/.ssh/authorized_keys"
+	devModeFile = platform.StateDir + "/devmode.enable"
+	sshKeyFile  = platform.SSHKeyFile
 )
 
 type DevModeState struct {
@@ -432,14 +429,18 @@ type SSHKeyState struct {
 // tls, local_loopback, log_level, tailscale: the HTTPS setting (Access page),
 // the loopback-only setting and the default log level (Advanced page) and the
 // Tailscale card (Network page), each shown only when reported.
+// cloud, display, usb_config, time_sync, url_media: JetKVM Cloud adoption,
+// the built-in screen, USB identity and devices, time sources and mounting
+// virtual media from a URL. update_source: an editable update server.
 func rpcGetDeviceCapabilities() ([]string, error) {
 	if platform.VIM4 {
-		return []string{"basic_kvm"}, nil
+		return vim4Capabilities(), nil
 	}
 	return []string{
 		"shell", "extensions", "usb_serial", "custom_edid", "upload_channel", "video_during_update",
 		"http_proxy", "domain", "mdns", "ipv6",
 		"tls", "local_loopback", "log_level", "tailscale",
+		"cloud", "display", "usb_config", "time_sync", "url_media",
 	}, nil
 }
 
@@ -525,6 +526,10 @@ func rpcSetDevModeState(enabled bool) error {
 		}
 	}
 
+	// Ubuntu keeps OpenSSH running; developer mode only shows the terminal.
+	if platform.VIM4 {
+		return nil
+	}
 	cmd := exec.Command("dropbear.sh")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -560,7 +565,7 @@ func rpcSetSSHKeyState(sshKey string) error {
 	}
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(sshKeyDir, 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(sshKeyFile), 0700); err != nil {
 		return fmt.Errorf("failed to create SSH key directory: %w", err)
 	}
 
@@ -788,11 +793,17 @@ func rpcIsUpdatePending() (bool, error) {
 }
 
 func rpcGetUsbEmulationState() (bool, error) {
+	if platform.VIM4 {
+		return gadget.IsGadgetAttachedToUDC(), nil
+	}
 	return gadget.IsUDCBound()
 }
 
 func rpcSetUsbEmulationState(enabled bool) error {
 	setUSBEmulationDesired(enabled)
+	if platform.VIM4 {
+		return vim4SetUsbEmulation(enabled)
+	}
 	return gadget.SetEmulationEnabled(enabled)
 }
 
@@ -841,7 +852,7 @@ var factoryResetPaths = []string{
 	configPath + ".bak",
 	imagesFolder,
 	tlsStorePath,
-	sshKeyDir,
+	sshKeyFile,
 	serialSettingsPath,
 	SerialCommandHistoryPath,
 	failsafeDefaultLastCrashPath,
@@ -1414,6 +1425,9 @@ var rpcHandlers = map[string]RPCHandler{
 	"reboot":                     {Func: rpcReboot, Params: []string{"force"}},
 	"getDeviceID":                {Func: rpcGetDeviceID},
 	"getDeviceCapabilities":      {Func: rpcGetDeviceCapabilities},
+	"getSSHUsername":             {Func: rpcGetSSHUsername},
+	"getUpdateSource":            {Func: rpcGetUpdateSource},
+	"setUpdateSource":            {Func: rpcSetUpdateSource, Params: []string{"url"}},
 	"deregisterDevice":           {Func: rpcDeregisterDevice},
 	"getCloudState":              {Func: rpcGetCloudState},
 	"getNetworkState":            {Func: rpcGetNetworkState},

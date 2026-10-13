@@ -47,13 +47,16 @@ func hwReboot(force bool, postRebootAction *ota.PostRebootAction, delay time.Dur
 		time.Sleep(delay - 1*time.Second) // wait requested extra settle time
 	}
 
-	args := []string{}
-	if force {
-		args = append(args, "-f")
+	var err error
+	if platform.VIM4 {
+		err = vim4Helper(10*time.Second, "reboot", nil, nil)
+	} else {
+		args := []string{}
+		if force {
+			args = append(args, "-f")
+		}
+		err = exec.Command("reboot", args...).Start()
 	}
-
-	cmd := exec.Command("reboot", args...)
-	err := cmd.Start()
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to reboot")
 		switchToMainScreen()

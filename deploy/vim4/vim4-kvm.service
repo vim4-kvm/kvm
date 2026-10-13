@@ -10,7 +10,11 @@ Conflicts=nanokvm.service
 Type=simple
 User=khadas
 Group=khadas
-SupplementaryGroups=video input
+# HDMI audio capture and the application journal for diagnostics.
+SupplementaryGroups=video input audio systemd-journal
+# The optional HTTPS listener uses port 443. Privileged changes go through
+# sudo and /usr/libexec/vim4-jetkvm, so NoNewPrivileges must stay unset.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 StateDirectory=jetkvm
 StateDirectoryMode=0700
 WorkingDirectory=/var/lib/jetkvm

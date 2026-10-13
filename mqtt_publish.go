@@ -197,12 +197,12 @@ func (m *MQTTManager) publishSessionsState() {
 
 // publishNetworkState publishes the current network state.
 func (m *MQTTManager) publishNetworkState() {
-	if !m.IsConnected() || networkManager == nil {
+	if !m.IsConnected() {
 		return
 	}
 
 	netState := mqttNetworkState{}
-	state, err := networkManager.GetInterfaceState(NetIfName)
+	state, err := getInterfaceState()
 	if err == nil {
 		rpcState := state.ToRpcInterfaceState()
 		if rpcState != nil {

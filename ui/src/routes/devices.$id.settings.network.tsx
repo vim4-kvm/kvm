@@ -100,6 +100,7 @@ export default function SettingsNetworkRoute() {
   const hasIpv6 = useCapability("ipv6");
   const hasWifi = useCapability("wifi");
   const hasTailscale = useCapability("tailscale");
+  const hasTimeSync = useCapability("time_sync");
   const setNetworkState = useNetworkStateStore(state => state.setNetworkState);
 
   // Some input needs direct state management. Mostly options that open more details
@@ -535,7 +536,7 @@ export default function SettingsNetworkRoute() {
                 </SettingsItem>
               )}
 
-              <SettingsItem
+              {hasTimeSync && <SettingsItem
                 title={m.network_time_sync_title()}
                 description={m.network_time_sync_description()}
               >
@@ -550,9 +551,9 @@ export default function SettingsNetworkRoute() {
                   ]}
                   {...register("time_sync_mode")}
                 />
-              </SettingsItem>
+              </SettingsItem>}
 
-              {timeSyncMode === "custom" && <CustomTimeSyncCard />}
+              {hasTimeSync && timeSyncMode === "custom" && <CustomTimeSyncCard />}
 
               <SettingsItem
                 title={m.network_dhcp_client_title()}

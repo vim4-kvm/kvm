@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jetkvm/kvm/internal/platform"
 	"github.com/jetkvm/kvm/internal/sync"
 	"github.com/jetkvm/kvm/resource"
 
@@ -41,6 +42,10 @@ func rebindAndRecoverHID(context string) error {
 }
 
 func setMassStorageMode(cdrom bool) error {
+	if platform.VIM4 {
+		vim4MediaCDROM = cdrom
+		return nil
+	}
 	mode := "0"
 	if cdrom {
 		mode = "1"
@@ -83,6 +88,9 @@ func setMassStorageMode(cdrom bool) error {
 }
 
 func mountImage(imagePath string) error {
+	if platform.VIM4 {
+		return setMassStorageImage(imagePath)
+	}
 	err := gadget.SetMassStorageImage("")
 	if err != nil {
 		return fmt.Errorf("remove mass storage image error: %w", err)
@@ -100,7 +108,7 @@ func mountImage(imagePath string) error {
 
 var nbdDevice *NBDDevice
 
-const imagesFolder = "/userdata/jetkvm/images"
+const imagesFolder = platform.StateDir + "/images"
 
 func initImagesFolder() error {
 	err := os.MkdirAll(imagesFolder, 0755)
@@ -153,9 +161,12 @@ func rpcMountBuiltInImage(filename string) error {
 }
 
 func getMassStorageCDROMEnabled() (bool, error) {
-	massStorageFunctionPath, err := gadget.GetPath("mass_storage_lun0")
-	if err != nil {
-		return false, fmt.Errorf("failed to get mass storage path: %w", err)
+	massStorageFunctionPath := vim4LunPath
+	if !platform.VIM4 {
+		var err error
+		if massStorageFunctionPath, err = gadget.GetPath("mass_storage_lun0"); err != nil {
+			return false, fmt.Errorf("failed to get mass storage path: %w", err)
+		}
 	}
 	data, err := os.ReadFile(path.Join(massStorageFunctionPath, "cdrom"))
 	if err != nil {
@@ -303,9 +314,9 @@ func unmountImageLocked() error {
 	virtualMediaStateMutex.Lock()
 	defer virtualMediaStateMutex.Unlock()
 
-	err := gadget.SetMassStorageImage("\n")
+	err := setMassStorageImage("\n")
 	if err != nil {
-		if !errors.Is(err, syscall.EBUSY) {
+		if platform.VIM4 || !errors.Is(err, syscall.EBUSY) {
 			return fmt.Errorf("failed to unmount image: %w", err)
 		}
 
@@ -345,7 +356,7 @@ func getInitialVirtualMediaState() (*VirtualMediaState, error) {
 		return nil, fmt.Errorf("failed to get mass storage cdrom enabled: %w", err)
 	}
 
-	diskPath, err := gadget.GetMassStorageImage()
+	diskPath, err := getMassStorageImage()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mass storage image: %w", err)
 	}
@@ -433,6 +444,9 @@ func prepareHTTPMount(url string, mode VirtualMediaMode) error {
 }
 
 func rpcMountWithHTTP(url string, mode VirtualMediaMode) error {
+	if platform.VIM4 {
+		return errors.New("mounting from a URL requires the kernel NBD driver")
+	}
 	if err := prepareHTTPMount(url, mode); err != nil {
 		return err
 	}
@@ -447,7 +461,7 @@ func rpcMountWithHTTP(url string, mode VirtualMediaMode) error {
 	logger.Debug().Msg("nbd device started")
 	//TODO: replace by polling on block device having right size
 	time.Sleep(1 * time.Second)
-	err = gadget.SetMassStorageImage("/dev/nbd0")
+	err = setMassStorageImage("/dev/nbd0")
 	if err != nil {
 		return err
 	}
@@ -475,7 +489,7 @@ func prepareStorageMount(filename string, mode VirtualMediaMode) error {
 		return fmt.Errorf("failed to set mass storage mode: %w", err)
 	}
 
-	err = gadget.SetMassStorageImage(fullPath)
+	err = setMassStorageImage(fullPath)
 	if err != nil {
 		return fmt.Errorf("failed to set mass storage image: %w", err)
 	}

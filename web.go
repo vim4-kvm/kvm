@@ -610,7 +610,7 @@ func RunWebServer() {
 	r := setupRouter()
 
 	// Determine the binding address based on the config
-	bindAddress := getBindAddress(80) // default port
+	bindAddress := getBindAddress(platform.HTTPPort)
 
 	logger.Info().Str("bindAddress", bindAddress).Bool("loopbackOnly", config.LocalLoopbackOnly).Msg("Starting web server")
 	if err := r.Run(bindAddress); err != nil {
@@ -907,7 +907,16 @@ func handleDiagnosticsDownload(c *gin.Context) {
 		zw := zip.NewWriter(pw)
 
 		// 1. Application log (full, no truncation)
-		if err := addFileToZip(zw, "app.log", supervisor.AppLogPath); err != nil {
+		if platform.VIM4 {
+			// systemd's journal holds the VIM4 application log.
+			appLog, err := vim4AppLog()
+			if err == nil {
+				err = addBytesToZip(zw, "app.log", appLog)
+			}
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to add app log to diagnostics zip")
+			}
+		} else if err := addFileToZip(zw, "app.log", supervisor.AppLogPath); err != nil {
 			logger.Warn().Err(err).Msg("failed to add app log to diagnostics zip")
 		}
 

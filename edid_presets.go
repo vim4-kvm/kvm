@@ -1,6 +1,9 @@
 package kvm
 
-import "github.com/jetkvm/kvm/internal/native"
+import (
+	"github.com/jetkvm/kvm/internal/native"
+	"github.com/jetkvm/kvm/internal/platform"
+)
 
 // EDIDPreset is an EDID the device offers by name. The list lives here so the
 // UI does not carry its own copy and the device decides what it advertises.
@@ -18,5 +21,8 @@ var edidPresets = []EDIDPreset{
 }
 
 func rpcGetEDIDPresets() ([]EDIDPreset, error) {
+	if platform.VIM4 {
+		return append(append([]EDIDPreset{}, edidPresets...), vim4EDIDPresets...), nil
+	}
 	return edidPresets, nil
 }

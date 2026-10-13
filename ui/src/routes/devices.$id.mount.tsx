@@ -232,6 +232,10 @@ function ModeSelectionView({
   setSelectedMode: (mode: "url" | "device") => void;
 }) {
   const { setModalView } = useMountMediaStore();
+  const urlMedia = useCapability("url_media");
+  useEffect(() => {
+    if (!urlMedia && selectedMode === "url") setSelectedMode("device");
+  }, [urlMedia, selectedMode, setSelectedMode]);
 
   return (
     <div className="w-full space-y-4">
@@ -251,7 +255,7 @@ function ModeSelectionView({
             description: m.mount_url_description(),
             icon: LuLink,
             tag: m.experimental(),
-            disabled: false,
+            disabled: !urlMedia,
           },
           {
             label: m.mount_jetkvm_storage(),

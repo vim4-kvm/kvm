@@ -18,7 +18,7 @@ var builtAppVersion = "0.1.0+dev"
 var otaState *ota.State
 
 func initOta() {
-	otaState = ota.NewState(ota.Options{
+	options := ota.Options{
 		Logger:             otaLogger,
 		ReleaseAPIEndpoint: config.GetUpdateAPIURL(),
 		GetHTTPClient: func() ota.HttpClient {
@@ -52,7 +52,11 @@ func initOta() {
 				mqttManager.publishUpdateState()
 			}
 		},
-	})
+	}
+	if platform.VIM4 {
+		setVIM4OtaOptions(&options)
+	}
+	otaState = ota.NewState(options)
 }
 
 func triggerOTAStateUpdate(state *ota.RPCState) {

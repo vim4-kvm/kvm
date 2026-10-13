@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jetkvm/kvm/internal/audio"
+	"github.com/jetkvm/kvm/internal/platform"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 )
@@ -163,8 +164,12 @@ func openCaptureWithBackoff(ctx context.Context) (*audio.ALSACapture, error) {
 	}
 }
 
-// alsaCaptureDevice returns the ALSA device for the UAC1 gadget card.
+// alsaCaptureDevice returns the ALSA device for the UAC1 gadget card. VIM4
+// captures the HDMI receiver's audio instead, also 48 kHz stereo S16LE.
 func alsaCaptureDevice() string {
+	if platform.VIM4 {
+		return "hw:AMLAUGESOUND,0"
+	}
 	if card, ok := findALSACard("UAC1Gadget"); ok {
 		return "hw:" + strconv.Itoa(card) + ",0"
 	}

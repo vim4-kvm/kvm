@@ -743,7 +743,6 @@ export interface DeviceState {
 
 // Optional device features reported by getDeviceCapabilities.
 export type Capability =
-  | "basic_kvm" // video and HID only; system settings remain externally managed
   | "shell"
   | "extensions"
   | "usb_serial"
@@ -759,7 +758,13 @@ export type Capability =
   | "tls" // HTTPS listener with a selectable certificate
   | "local_loopback" // web UI can be limited to the loopback interface
   | "log_level" // default log level can be changed
-  | "tailscale"; // Tailscale client
+  | "tailscale" // Tailscale client
+  | "cloud" // JetKVM Cloud adoption on the Access page
+  | "display" // built-in screen orientation and backlight
+  | "usb_config" // USB identity and the set of emulated devices
+  | "time_sync" // time synchronization sources on the Network page
+  | "url_media" // virtual media streamed from an HTTP(S) URL
+  | "update_source"; // configurable application update server
 
 export const useDeviceStore = create<DeviceState>(set => ({
   appVersion: null,

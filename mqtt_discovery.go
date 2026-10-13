@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+
+	"github.com/jetkvm/kvm/internal/platform"
 )
 
 // --- Home Assistant MQTT Discovery ---
@@ -60,17 +62,16 @@ func (m *MQTTManager) haDeviceInfo() *haDevice {
 
 	// Build configuration URL from network state
 	configURL := ""
-	if networkManager != nil {
-		state, err := networkManager.GetInterfaceState(NetIfName)
-		if err == nil {
-			rpcState := state.ToRpcInterfaceState()
-			if rpcState != nil && rpcState.IPv4Address != "" {
-				scheme := "http"
-				if config.TLSMode != "" {
-					scheme = "https"
-				}
-				configURL = fmt.Sprintf("%s://%s", scheme, rpcState.IPv4Address)
+	if state, err := getInterfaceState(); err == nil {
+		rpcState := state.ToRpcInterfaceState()
+		if rpcState != nil && rpcState.IPv4Address != "" {
+			scheme, host := "http", rpcState.IPv4Address
+			if config.TLSMode != "" {
+				scheme = "https"
+			} else if platform.HTTPPort != 80 {
+				host = fmt.Sprintf("%s:%d", host, platform.HTTPPort)
 			}
+			configURL = fmt.Sprintf("%s://%s", scheme, host)
 		}
 	}
 

@@ -56,6 +56,7 @@ export default function SettingsAccessIndexRoute() {
   const [selectedProvider, setSelectedProvider] = useState<string>("jetkvm");
   const [tlsMode, setTlsMode] = useState<string>("unknown");
   const tls = useCapability("tls");
+  const cloud = useCapability("cloud");
   const [tlsCert, setTlsCert] = useState<string>("");
   const [tlsKey, setTlsKey] = useState<string>("");
 
@@ -315,11 +316,11 @@ export default function SettingsAccessIndexRoute() {
               </SettingsItem>
             )}
           </div>
-          <div className="h-px w-full bg-slate-800/10 dark:bg-slate-300/20" />
+          {cloud && <div className="h-px w-full bg-slate-800/10 dark:bg-slate-300/20" />}
         </>
       )}
 
-      <div className="space-y-4">
+      {cloud && <div className="space-y-4">
         <SettingsSectionHeader title="Remote" description={m.access_remote_description()} />
 
         <div className="space-y-4">
@@ -448,7 +449,7 @@ export default function SettingsAccessIndexRoute() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

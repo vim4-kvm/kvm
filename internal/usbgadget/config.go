@@ -185,7 +185,12 @@ func (u *UsbGadget) Init() error {
 		}
 		u.udc = strings.TrimSpace(string(data))
 		if u.udc == "" {
-			return fmt.Errorf("system-managed gadget is unbound")
+			// USB emulation can be switched off; the controller still exists.
+			controllers, err := os.ReadDir(udcClassPath)
+			if err != nil || len(controllers) != 1 {
+				return fmt.Errorf("system-managed gadget is unbound")
+			}
+			u.udc = controllers[0].Name()
 		}
 		return nil
 	}

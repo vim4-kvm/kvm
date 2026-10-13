@@ -32,6 +32,9 @@ func (s *State) GetReleaseAPIEndpoint() string {
 
 // getUpdateURL returns the update URL for the given parameters
 func (s *State) getUpdateURL(params UpdateParams) (string, error, bool) {
+	if s.releaseAPIEndpoint == "" {
+		return "", ErrNoReleaseServer, false
+	}
 	updateURL, err := url.Parse(s.releaseAPIEndpoint)
 	if err != nil {
 		return "", fmt.Errorf("error parsing update metadata URL: %w", err), false
@@ -246,7 +249,7 @@ func (s *State) doUpdate(ctx context.Context, params UpdateParams) error {
 			Str("hash", appUpdate.hash).
 			Msg("App update available")
 
-		bypassSignatureCheck := shouldBypassSignatureCheck(appUpdate.version, appUpdate.customVersionUpdate, params.IncludePreRelease)
+		bypassSignatureCheck := s.unsignedUpdates || shouldBypassSignatureCheck(appUpdate.version, appUpdate.customVersionUpdate, params.IncludePreRelease)
 		if err := s.updateApp(ctx, appUpdate, bypassSignatureCheck); err != nil {
 			return s.componentUpdateError("Error updating app", err, &scopedLogger)
 		}
@@ -257,7 +260,7 @@ func (s *State) doUpdate(ctx context.Context, params UpdateParams) error {
 	scopedLogger.Trace().Bool("pending", systemUpdate.pending).Msg("Checking for system update")
 
 	if systemUpdate.pending {
-		bypassSignatureCheck := shouldBypassSignatureCheck(systemUpdate.version, systemUpdate.customVersionUpdate, params.IncludePreRelease)
+		bypassSignatureCheck := s.unsignedUpdates || shouldBypassSignatureCheck(systemUpdate.version, systemUpdate.customVersionUpdate, params.IncludePreRelease)
 		if err := s.updateSystem(ctx, systemUpdate, bypassSignatureCheck); err != nil {
 			return s.componentUpdateError("Error updating system", err, &scopedLogger)
 		}
@@ -398,6 +401,7 @@ func (s *State) checkUpdateStatus(
 		"app",
 		appUpdateStatus,
 		params,
+		s.isNewer,
 	); err != nil {
 		return fmt.Errorf("error parsing remote app version: %w", err)
 	}
@@ -407,6 +411,7 @@ func (s *State) checkUpdateStatus(
 		"system",
 		systemUpdateStatus,
 		params,
+		s.isNewer,
 	); err != nil {
 		return fmt.Errorf("error parsing remote system version: %w", err)
 	}

@@ -12,7 +12,7 @@ const (
 // DO NOT call it directly, it's not thread safe
 // Mutex is currently held by the caller, e.g. doUpdate
 func (s *State) updateApp(ctx context.Context, appUpdate *componentUpdateStatus, bypassSignatureCheck bool) error {
-	l := s.l.With().Str("path", appUpdatePath).Logger()
+	l := s.l.With().Str("path", s.appUpdatePath).Logger()
 
 	// Validate signature requirement and download if available
 	signature, err := s.downloadComponentSignature(ctx, appUpdate, "app", &l, bypassSignatureCheck)
@@ -20,7 +20,7 @@ func (s *State) updateApp(ctx context.Context, appUpdate *componentUpdateStatus,
 		return s.componentUpdateError("Error with app signature", err, &l)
 	}
 
-	if err := s.downloadFile(ctx, appUpdatePath, appUpdate.url, "app"); err != nil {
+	if err := s.downloadFile(ctx, s.appUpdatePath, appUpdate.url, "app"); err != nil {
 		return s.componentUpdateError("Error downloading app update", err, &l)
 	}
 
@@ -31,7 +31,7 @@ func (s *State) updateApp(ctx context.Context, appUpdate *componentUpdateStatus,
 
 	if err := s.verifyFile(
 		ctx,
-		appUpdatePath,
+		s.appUpdatePath,
 		appUpdate.hash,
 		signature,
 		&appUpdate.verificationProgress,
@@ -41,7 +41,14 @@ func (s *State) updateApp(ctx context.Context, appUpdate *componentUpdateStatus,
 	verifyFinished := time.Now()
 	appUpdate.verifiedAt = verifyFinished
 	appUpdate.verificationProgress = 1
-	appUpdate.updatedAt = verifyFinished
+	s.triggerComponentUpdateState("app", appUpdate)
+
+	if s.installApp != nil {
+		if err := s.installApp(s.appUpdatePath); err != nil {
+			return s.componentUpdateError("Error installing app update", err, &l)
+		}
+	}
+	appUpdate.updatedAt = time.Now()
 	appUpdate.updateProgress = 1
 	s.triggerComponentUpdateState("app", appUpdate)
 

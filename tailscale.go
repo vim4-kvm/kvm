@@ -3,14 +3,19 @@ package kvm
 import (
 	"fmt"
 
+	"github.com/jetkvm/kvm/internal/platform"
 	"github.com/jetkvm/kvm/internal/tailscale"
 )
 
 func rpcGetTailscaleStatus() (*tailscale.Status, error) {
 	ensureConfigLoaded()
-	return tailscale.GetStatus(config.TailscaleControlURL, func(err error) {
+	status, err := tailscale.GetStatus(config.TailscaleControlURL, func(err error) {
 		tailscaleLogger.Warn().Err(err).Msg("failed to get tailscale status")
 	})
+	if platform.VIM4 && err == nil {
+		requestVIM4TailscaleLogin(status)
+	}
+	return status, err
 }
 
 func rpcGetTailscaleControlURL() (string, error) {

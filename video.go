@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jetkvm/kvm/internal/native"
+	"github.com/jetkvm/kvm/internal/platform"
 	"github.com/jetkvm/kvm/internal/sync"
 )
 
@@ -80,7 +81,11 @@ func setHostDisplayAdvertisedLocked(enabled bool, reason string, force bool) err
 		edid = configuredVideoEDID()
 	}
 
-	if err := nativeInstance.VideoSetEDID(edid); err != nil {
+	setEDID := nativeInstance.VideoSetEDID
+	if platform.VIM4 {
+		setEDID = vim4SetEDID
+	}
+	if err := setEDID(edid); err != nil {
 		nativeLogger.Warn().Err(err).Bool("advertised", enabled).Str("reason", reason).Msg("failed to update host display advertisement")
 		return err
 	}

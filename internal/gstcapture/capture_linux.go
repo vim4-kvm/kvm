@@ -4,9 +4,10 @@
 package gstcapture
 
 /*
-#cgo pkg-config: gstreamer-app-1.0
+#cgo pkg-config: gstreamer-app-1.0 gstreamer-video-1.0
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
+#include <gst/video/video.h>
 #include <stdlib.h>
 
 static GstElement *open_pipeline(const char *description, char **error) {
@@ -22,10 +23,11 @@ static GstElement *open_pipeline(const char *description, char **error) {
     return pipeline;
 }
 static int sample_data(GstSample *sample, GstMapInfo *map,
-                      guint64 *pts, guint64 *duration, int *width, int *height) {
+                      guint64 *pts, guint64 *duration, int *width, int *height, int *keyframe) {
     GstBuffer *buffer = gst_sample_get_buffer(sample);
     if (!buffer || !gst_buffer_map(buffer, map, GST_MAP_READ)) return 0;
     *pts = GST_BUFFER_PTS(buffer);
+    *keyframe = !GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT);
     *duration = GST_BUFFER_DURATION(buffer);
     GstCaps *caps = gst_sample_get_caps(sample);
     if (caps && gst_caps_get_size(caps)) {
@@ -54,6 +56,23 @@ static char *pipeline_error(GstElement *pipeline) {
     return text;
 }
 static int is_appsink(GstElement *element) { return GST_IS_APP_SINK(element); }
+static int int_property_range(const char *factory, const char *name, int *min, int *max) {
+    gst_init(NULL, NULL);
+    GstElement *element = gst_element_factory_make(factory, NULL);
+    if (!element) return 0;
+    GParamSpec *spec = g_object_class_find_property(G_OBJECT_GET_CLASS(element), name);
+    int found = spec && G_IS_PARAM_SPEC_INT(spec) && (spec->flags & G_PARAM_WRITABLE);
+    if (found) {
+        *min = G_PARAM_SPEC_INT(spec)->minimum;
+        *max = G_PARAM_SPEC_INT(spec)->maximum;
+    }
+    gst_object_unref(element);
+    return found;
+}
+static int request_keyframe(GstElement *sink) {
+    return gst_element_send_event(sink,
+        gst_video_event_new_upstream_force_key_unit(GST_CLOCK_TIME_NONE, TRUE, 0));
+}
 */
 import "C"
 
@@ -69,16 +88,31 @@ import (
 type Frame struct {
 	Data          []byte
 	PTS           time.Duration
+	HasPTS        bool
 	Duration      time.Duration
 	Width, Height int
+	Keyframe      bool
+}
+
+// IntPropertyRange inspects the loaded plugin without starting a pipeline.
+func IntPropertyRange(factory, property string) (min, max int, ok bool) {
+	f := C.CString(factory)
+	p := C.CString(property)
+	defer C.free(unsafe.Pointer(f))
+	defer C.free(unsafe.Pointer(p))
+	var lo, hi C.int
+	found := C.int_property_range(f, p, &lo, &hi)
+	return int(lo), int(hi), found != 0
 }
 
 // Run owns the pipeline until cancellation, EOS or error. The description must
 // contain an appsink named frames. consume runs synchronously and must return
 // promptly. The data is copied into Go memory and may be retained by the caller.
+// Each value received from keyframes asks the encoder for an IDR frame; nil
+// disables requests.
 // No encoded buffers are dropped here: discarding an inter frame can corrupt a
 // GOP. Backpressure is bounded by the appsink queue instead.
-func Run(ctx context.Context, description string, consume func(Frame) error) error {
+func Run(ctx context.Context, description string, keyframes <-chan struct{}, consume func(Frame) error) error {
 	if consume == nil {
 		return errors.New("missing frame consumer")
 	}
@@ -125,6 +159,13 @@ func Run(ctx context.Context, description string, consume func(Frame) error) err
 			C.g_free(C.gpointer(msg))
 			return err
 		}
+		select {
+		case <-keyframes:
+			if C.request_keyframe(sink) == 0 {
+				return errors.New("encoder rejected keyframe request")
+			}
+		default:
+		}
 		sample := C.gst_app_sink_try_pull_sample(app, C.GstClockTime(100*time.Millisecond))
 		if sample == nil {
 			if C.gst_app_sink_is_eos(app) != 0 {
@@ -134,8 +175,8 @@ func Run(ctx context.Context, description string, consume func(Frame) error) err
 		}
 		var mapped C.GstMapInfo
 		var pts, duration C.guint64
-		var width, height C.int
-		if C.sample_data(sample, &mapped, &pts, &duration, &width, &height) == 0 {
+		var width, height, keyframe C.int
+		if C.sample_data(sample, &mapped, &pts, &duration, &width, &height, &keyframe) == 0 {
 			C.gst_sample_unref(sample)
 			return errors.New("cannot map capture buffer")
 		}
@@ -144,7 +185,7 @@ func Run(ctx context.Context, description string, consume func(Frame) error) err
 			return errors.New("capture buffer exceeds 16 MiB")
 		}
 		frame := Frame{Data: C.GoBytes(unsafe.Pointer(mapped.data), C.int(mapped.size)),
-			PTS: time.Duration(pts), Width: int(width), Height: int(height)}
+			PTS: time.Duration(pts), HasPTS: uint64(pts) != ^uint64(0), Width: int(width), Height: int(height), Keyframe: keyframe != 0}
 		frame.Duration = frameDuration(previous, uint64(pts), uint64(duration))
 		previous = uint64(pts)
 		C.release_sample(sample, &mapped)

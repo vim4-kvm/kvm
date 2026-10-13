@@ -24,6 +24,8 @@ export default function SettingsAdvancedRoute() {
   const { navigateTo } = useDeviceUiNavigation();
 
   const [sshKey, setSSHKey] = useState<string>("");
+  const [sshUsername, setSSHUsername] = useState<string>("root");
+  const [updateSource, setUpdateSource] = useState<string>("");
   const { setDeveloperMode } = useSettingsStore();
   const [devChannel, setDevChannel] = useState(false);
   const [defaultLogLevel, setDefaultLogLevel] = useState<string>("WARN");
@@ -43,6 +45,7 @@ export default function SettingsAdvancedRoute() {
   const removableStorage = useCapability("removable_storage");
   const localLoopback = useCapability("local_loopback");
   const logLevel = useCapability("log_level");
+  const hasUpdateSource = useCapability("update_source");
   // A one-image firmware reports an empty appVersion and updates only its system.
   const deviceAppVersion = useDeviceStore(state => state.appVersion);
   const separateApp = deviceAppVersion !== "";
@@ -62,7 +65,34 @@ export default function SettingsAdvancedRoute() {
       if ("error" in resp) return;
       setSSHKey(resp.result as string);
     });
+
+    // Devices that do not report an account use the root account.
+    send("getSSHUsername", {}, (resp: JsonRpcResponse) => {
+      if ("error" in resp) return;
+      setSSHUsername(resp.result as string);
+    });
   }, [send, setDeveloperMode, shell]);
+
+  useEffect(() => {
+    if (!hasUpdateSource) return;
+    send("getUpdateSource", {}, (resp: JsonRpcResponse) => {
+      if ("error" in resp) return;
+      setUpdateSource(resp.result as string);
+    });
+  }, [send, hasUpdateSource]);
+
+  const handleUpdateSourceSave = useCallback(() => {
+    send("setUpdateSource", { url: updateSource.trim() }, (resp: JsonRpcResponse) => {
+      if ("error" in resp) {
+        notifications.error(
+          m.advanced_error_update_source({ error: resp.error.data || resp.error.message }),
+        );
+        return;
+      }
+      setUpdateSource(resp.result as string);
+      notifications.success(m.advanced_success_update_source());
+    });
+  }, [send, updateSource]);
 
   useEffect(() => {
     send("getUsbEmulationState", {}, (resp: JsonRpcResponse) => {
@@ -382,6 +412,29 @@ export default function SettingsAdvancedRoute() {
             }}
           />
         </SettingsItem>
+        {hasUpdateSource && (
+          <div className="space-y-4">
+            <SettingsItem
+              title={m.advanced_update_source_title()}
+              description={m.advanced_update_source_description()}
+            />
+            <div className="flex items-end gap-x-2">
+              <InputFieldWithLabel
+                size="SM"
+                label={m.advanced_update_source_title()}
+                placeholder="https://updates.example.com"
+                value={updateSource}
+                onChange={e => setUpdateSource(e.target.value)}
+              />
+              <Button
+                size="SM"
+                theme="primary"
+                text={m.advanced_update_source_save()}
+                onClick={handleUpdateSourceSave}
+              />
+            </div>
+          </div>
+        )}
         {shell && (
           <SettingsItem
             title={m.advanced_developer_mode_title()}
@@ -443,7 +496,7 @@ export default function SettingsAdvancedRoute() {
                   placeholder={m.advanced_ssh_public_key_placeholder()}
                 />
                 <p className="text-xs text-slate-600 dark:text-slate-400">
-                  {m.advanced_ssh_default_user()} <strong>root</strong>.
+                  {m.advanced_ssh_default_user()} <strong>{sshUsername}</strong>.
                 </p>
                 {!sshKey?.trim() && (
                   <p className="text-xs text-amber-600 dark:text-amber-500">

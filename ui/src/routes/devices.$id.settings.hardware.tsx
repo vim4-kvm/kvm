@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { BacklightSettings, useSettingsStore } from "@hooks/stores";
+import { BacklightSettings, useCapability, useSettingsStore } from "@hooks/stores";
 import { JsonRpcResponse, useJsonRpc } from "@hooks/useJsonRpc";
 import { Checkbox } from "@components/Checkbox";
 import { SelectMenuBasic } from "@components/SelectMenuBasic";
@@ -18,6 +18,9 @@ export default function SettingsHardwareRoute() {
   const settings = useSettingsStore();
   const { setDisplayRotation } = useSettingsStore();
   const [powerSavingEnabled, setPowerSavingEnabled] = useState(false);
+  const [powerSavingSupported, setPowerSavingSupported] = useState(false);
+  const display = useCapability("display");
+  const usbConfig = useCapability("usb_config");
 
   const handleDisplayRotationChange = (rotation: string) => {
     setDisplayRotation(rotation);
@@ -91,6 +94,7 @@ export default function SettingsHardwareRoute() {
   };
 
   useEffect(() => {
+    if (!display) return;
     send("getBacklightSettings", {}, (resp: JsonRpcResponse) => {
       if ("error" in resp) {
         return notifications.error(
@@ -100,7 +104,7 @@ export default function SettingsHardwareRoute() {
       const result = resp.result as BacklightSettings;
       setBacklightSettings(result);
     });
-  }, [send, setBacklightSettings]);
+  }, [send, setBacklightSettings, display]);
 
   useEffect(() => {
     send("getVideoSleepMode", {}, (resp: JsonRpcResponse) => {
@@ -108,12 +112,14 @@ export default function SettingsHardwareRoute() {
         console.error("Failed to get power saving mode:", resp.error);
         return;
       }
-      const result = resp.result as { enabled: boolean; duration: number };
+      const result = resp.result as { supported: boolean; enabled: boolean; duration: number };
+      setPowerSavingSupported(result.supported);
       setPowerSavingEnabled(result.duration >= 0);
     });
   }, [send]);
 
   useEffect(() => {
+    if (!display) return;
     send("getDisplayRotation", {}, (resp: JsonRpcResponse) => {
       if ("error" in resp) {
         console.error("Failed to get display rotation:", resp.error);
@@ -122,12 +128,12 @@ export default function SettingsHardwareRoute() {
       const result = resp.result as { rotation: string };
       setDisplayRotation(result.rotation);
     });
-  }, [send, setDisplayRotation]);
+  }, [send, setDisplayRotation, display]);
 
   return (
     <div className="space-y-4">
       <SettingsPageHeader title={m.hardware_title()} description={m.hardware_page_description()} />
-      <div className="space-y-4">
+      {display && <div className="space-y-4">
         <SettingsItem
           title={m.hardware_display_orientation_title()}
           description={m.hardware_display_orientation_description()}
@@ -212,10 +218,10 @@ export default function SettingsHardwareRoute() {
         <p className="text-xs text-slate-600 dark:text-slate-400">
           {m.hardware_display_wake_up_note()}
         </p>
-      </div>
+      </div>}
 
-      <div className="space-y-4">
-        <div className="h-px w-full bg-slate-800/10 dark:bg-slate-300/20" />
+      {powerSavingSupported && <div className="space-y-4">
+        {display && <div className="h-px w-full bg-slate-800/10 dark:bg-slate-300/20" />}
         <SettingsSectionHeader
           title={m.hardware_power_saving_title()}
           description={m.hardware_power_saving_description()}
@@ -230,11 +236,11 @@ export default function SettingsHardwareRoute() {
             onChange={e => handlePowerSavingChange(e.target.checked)}
           />
         </SettingsItem>
-      </div>
+      </div>}
 
-      <UsbDeviceSetting />
+      {usbConfig && <UsbDeviceSetting />}
 
-      <UsbInfoSetting />
+      {usbConfig && <UsbInfoSetting />}
     </div>
   );
 }

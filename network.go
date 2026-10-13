@@ -12,6 +12,7 @@ import (
 	"github.com/jetkvm/kvm/internal/mdns"
 	"github.com/jetkvm/kvm/internal/network/types"
 	"github.com/jetkvm/kvm/internal/ota"
+	"github.com/jetkvm/kvm/internal/platform"
 	"github.com/jetkvm/kvm/pkg/myip"
 	"github.com/jetkvm/kvm/pkg/nmlite"
 	"github.com/jetkvm/kvm/pkg/nmlite/link"
@@ -292,17 +293,37 @@ func shouldRebootForNetworkChange(oldConfig, newConfig *types.NetworkConfig) (re
 	return rebootRequired, postRebootAction
 }
 
+// getInterfaceState returns the state of the managed Ethernet interface.
+func getInterfaceState() (*types.InterfaceState, error) {
+	if platform.VIM4 {
+		return vim4InterfaceState()
+	}
+	if networkManager == nil {
+		return nil, fmt.Errorf("network manager is not initialized")
+	}
+	return networkManager.GetInterfaceState(NetIfName)
+}
+
 func rpcGetNetworkState() *types.RpcInterfaceState {
-	state, _ := networkManager.GetInterfaceState(NetIfName)
+	state, err := getInterfaceState()
+	if err != nil {
+		state = &types.InterfaceState{InterfaceName: NetIfName}
+	}
 	return state.ToRpcInterfaceState()
 }
 
 func rpcGetNetworkSettings() *RpcNetworkSettings {
+	if platform.VIM4 {
+		return toRpcNetworkSettings(vim4NetworkSettings())
+	}
 	return toRpcNetworkSettings(config.NetworkConfig)
 }
 
 func rpcSetNetworkSettings(settings RpcNetworkSettings) (*RpcNetworkSettings, error) {
 	netConfig := settings.ToNetworkConfig()
+	if platform.VIM4 {
+		return vim4SetNetworkSettings(netConfig)
+	}
 
 	l := networkLogger.With().
 		Str("interface", NetIfName).
@@ -359,6 +380,9 @@ func rpcSetNetworkSettings(settings RpcNetworkSettings) (*RpcNetworkSettings, er
 }
 
 func rpcRenewDHCPLease() error {
+	if platform.VIM4 {
+		return vim4Helper(40*time.Second, "dhcp-renew", nil, nil)
+	}
 	return networkManager.RenewDHCPLease(NetIfName)
 }
 

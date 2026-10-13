@@ -1,6 +1,7 @@
 package ota
 
 import (
+	"cmp"
 	"sync"
 	"time"
 
@@ -137,7 +138,17 @@ type State struct {
 	resetConfig             ResetConfigFunc
 	setAutoUpdate           SetAutoUpdateFunc
 	gpgVerifier             *GPGVerifier
+	appUpdatePath           string
+	installApp              InstallAppFunc
+	unsignedUpdates         bool
+	isNewer                 IsNewerFunc
 }
+
+// InstallAppFunc installs a downloaded and verified app update before reboot.
+type InstallAppFunc func(path string) error
+
+// IsNewerFunc reports whether a remote version replaces the local one.
+type IsNewerFunc func(remote, local *semver.Version) bool
 
 func toUpdateStatus(appUpdate *componentUpdateStatus, systemUpdate *componentUpdateStatus, error string) *UpdateStatus {
 	return &UpdateStatus{
@@ -196,6 +207,17 @@ type Options struct {
 	ResetConfig        ResetConfigFunc
 	SkipConfirmSystem  bool
 	SetAutoUpdate      SetAutoUpdateFunc
+	// AppUpdatePath overrides where the app update is downloaded.
+	AppUpdatePath string
+	// InstallApp installs the verified app update; by default the update is
+	// picked up from AppUpdatePath on the next boot.
+	InstallApp InstallAppFunc
+	// UnsignedUpdates accepts updates without a JetKVM release signature, for
+	// platforms whose packages JetKVM does not sign. The hash from the
+	// configured release server still has to match.
+	UnsignedUpdates bool
+	// IsNewer orders versions; by default semantic version precedence.
+	IsNewer IsNewerFunc
 }
 
 // NewState creates a new OTA state
@@ -222,6 +244,13 @@ func NewState(opts Options) *State {
 		resetConfig:             opts.ResetConfig,
 		setAutoUpdate:           opts.SetAutoUpdate,
 		gpgVerifier:             NewGPGVerifier(opts.Logger, opts.GetHTTPClient),
+		appUpdatePath:           cmp.Or(opts.AppUpdatePath, appUpdatePath),
+		installApp:              opts.InstallApp,
+		unsignedUpdates:         opts.UnsignedUpdates,
+		isNewer:                 opts.IsNewer,
+	}
+	if s.isNewer == nil {
+		s.isNewer = func(remote, local *semver.Version) bool { return remote.GreaterThan(local) }
 	}
 	if !opts.SkipConfirmSystem {
 		go s.confirmCurrentSystem()

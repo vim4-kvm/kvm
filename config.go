@@ -129,6 +129,10 @@ type Config struct {
 // GetUpdateAPIURL returns the update API URL
 func (c *Config) GetUpdateAPIURL() string {
 	if c.UpdateAPIURL == "" {
+		// JetKVM's release server publishes appliance firmware only.
+		if platform.VIM4 {
+			return ""
+		}
 		return DefaultAPIURL
 	}
 	return strings.TrimSuffix(c.UpdateAPIURL, "/") + "/releases"

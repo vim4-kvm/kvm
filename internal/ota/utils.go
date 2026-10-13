@@ -4,11 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
+	"syscall"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
@@ -21,8 +24,10 @@ func syncFilesystem() error {
 		return fmt.Errorf("error flushing filesystem buffers: %w", err)
 	}
 
-	// Clear the filesystem caches to force a read from disk
-	if err := os.WriteFile("/proc/sys/vm/drop_caches", []byte("1"), 0644); err != nil {
+	// Clear the filesystem caches to force a read from disk. Only root on a
+	// writable /proc can; otherwise the page cache contents are verified.
+	if err := os.WriteFile("/proc/sys/vm/drop_caches", []byte("1"), 0644); err != nil &&
+		!errors.Is(err, fs.ErrPermission) && !errors.Is(err, syscall.EROFS) {
 		return fmt.Errorf("error clearing filesystem caches: %w", err)
 	}
 

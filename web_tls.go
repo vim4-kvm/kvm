@@ -8,12 +8,13 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/jetkvm/kvm/internal/platform"
 	"github.com/jetkvm/kvm/internal/sync"
 	"github.com/jetkvm/kvm/internal/websecure"
 )
 
 const (
-	tlsStorePath                     = "/userdata/jetkvm/tls"
+	tlsStorePath                     = platform.StateDir + "/tls"
 	webSecureSelfSignedDefaultDomain = "jetkvm.local"
 	webSecureSelfSignedCAName        = "JetKVM Self-Signed CA"
 	webSecureSelfSignedOrganization  = "JetKVM"
@@ -53,7 +54,7 @@ func initCertStore() {
 func getCertificate(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	switch config.TLSMode {
 	case "self-signed":
-		if isTimeSyncNeeded() || !timeSync.IsSyncSuccess() {
+		if !isSystemTimeSynced() {
 			return nil, fmt.Errorf("time is not synced")
 		}
 		return certSigner.GetCertificate(info)

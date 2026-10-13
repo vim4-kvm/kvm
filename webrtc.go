@@ -21,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"github.com/rs/zerolog"
 )
@@ -187,12 +188,29 @@ func drainRTCP(sender *webrtc.RTPSender) {
 	}
 }
 
+// readVideoRTCP drains RTCP like drainRTCP and asks a backend that can force
+// keyframes for one when the browser reports a lost or undecodable picture.
+func readVideoRTCP(sender *webrtc.RTPSender) {
+	requester, canRequest := nativeInstance.(interface{ VideoRequestKeyframe() })
+	for {
+		packets, _, err := sender.ReadRTCP()
+		if err != nil {
+			return
+		}
+		for _, packet := range packets {
+			switch packet.(type) {
+			case *rtcp.PictureLossIndication, *rtcp.FullIntraRequest:
+				if canRequest {
+					requester.VideoRequestKeyframe()
+				}
+			}
+		}
+	}
+}
+
 // resolveCodec picks the video codec based on user preference and browser support.
 // Always validates against the browser's SDP offer to prevent negotiation failure.
 func resolveCodec(offerSDP string) string {
-	if platform.VIM4 {
-		return webrtc.MimeTypeH264
-	}
 	browserSupportsH265 := strings.Contains(strings.ToUpper(offerSDP), "H265")
 
 	switch config.VideoCodecPreference {
@@ -237,7 +255,7 @@ func (s *Session) ExchangeOffer(offerStr string) (string, error) {
 		return "", err
 	}
 
-	go drainRTCP(rtpSender)
+	go readVideoRTCP(rtpSender)
 
 	if err := s.attachAudioTrack(offer.SDP); err != nil {
 		return "", err
@@ -561,7 +579,8 @@ func newSession(config SessionConfig) (*Session, error) {
 		}()
 
 		scopedLogger.Info().Str("label", d.Label()).Uint16("id", *d.ID()).Msg("New DataChannel")
-		if platform.VIM4 && d.Label() != "rpc" && !strings.HasPrefix(d.Label(), "hidrpc") {
+		// VIM4 has no serial extension and no CDC-ACM function in its gadget.
+		if platform.VIM4 && (d.Label() == "serial" || d.Label() == "cdcacm") {
 			_ = d.Close()
 			return
 		}

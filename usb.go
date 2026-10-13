@@ -21,6 +21,10 @@ func effectiveUsbDevices() *usbgadget.Devices {
 }
 
 func effectiveAudioEnabled() bool {
+	// VIM4 audio comes from HDMI, not from a USB audio function.
+	if platform.VIM4 {
+		return config != nil && config.AudioEnabled
+	}
 	return config != nil &&
 		config.UsbDevices != nil &&
 		config.AudioEnabled &&

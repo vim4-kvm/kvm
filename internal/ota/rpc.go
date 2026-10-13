@@ -106,6 +106,7 @@ func remoteMetadataToComponentStatus(
 	component string,
 	componentStatus *componentUpdateStatus,
 	params UpdateParams,
+	isNewer IsNewerFunc,
 ) error {
 	prefix := componentFieldMap[component]
 	if prefix == "" {
@@ -134,6 +135,13 @@ func remoteMetadataToComponentStatus(
 		}
 	}
 
+	// A release server for a platform without this component omits it.
+	if componentStatus.version == "" {
+		componentStatus.available = false
+		componentStatus.availableReason = "release server does not provide this component"
+		return nil
+	}
+
 	localVersion, err := semver.NewVersion(componentStatus.localVersion)
 	if err != nil {
 		return fmt.Errorf("error parsing local version: %w", err)
@@ -143,7 +151,7 @@ func remoteMetadataToComponentStatus(
 	if err != nil {
 		return fmt.Errorf("error parsing remote version: %w", err)
 	}
-	componentStatus.available = remoteVersion.GreaterThan(localVersion)
+	componentStatus.available = isNewer(remoteVersion, localVersion)
 	componentStatus.availableReason = fmt.Sprintf("remote version %s is greater than local version %s", remoteVersion.String(), localVersion.String())
 
 	// Handle pre-release updates

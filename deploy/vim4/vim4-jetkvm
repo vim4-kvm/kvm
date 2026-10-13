@@ -1,0 +1,639 @@
+#!/usr/bin/python3
+"""Bounded root operations for the JetKVM application on VIM4 Ubuntu.
+
+Usage: vim4-jetkvm OPERATION < request.json
+Prints one JSON object. Requests can contain Wi-Fi credentials; errors never
+echo request values.
+"""
+import fcntl
+import ipaddress
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+
+STATE = Path('/var/lib/jetkvm')
+IMAGES = STATE / 'images'
+GADGET = Path('/sys/kernel/config/usb_gadget/kvm')
+LUN = GADGET / 'functions/mass_storage.disk0/lun.0'
+SWITCHABLE = ('ncm.usb0', 'mass_storage.disk0', 'uac2.usb0')
+HDMIRX = Path('/sys/class/hdmirx/hdmirx0')
+HDMIRX_DEVICE = '/dev/hdmirx0'
+# HDMI RX port B feeds vdin0. The ioctl and edid_with_port number ports from 1;
+# the debug interface numbers them from 0.
+EDID_PORT = 2
+DEBUG_PORT = 1
+HDMI_IOC_EDID_UPDATE_WITH_PORT = 0x40014813  # _IOW('H', 0x13, unsigned char)
+# tvserver writes this selection before loading its own EDID set at startup.
+TVSERVER_PENDING = '0x222'
+EDID_LOADED = Path('/run/vim4-jetkvm-edid.loaded')
+NM_CONNECTIONS = Path('/etc/NetworkManager/system-connections')
+AVAHI_CONF = Path('/etc/avahi/avahi-daemon.conf')
+UPDATE_STAGING = Path('/var/lib/vim4-jetkvm-update')
+PACKAGE = 'vim4-jetkvm'
+MAX_WIFI_NETWORKS = 8
+
+
+def run(*args, timeout=20, check=True, stdin=None):
+    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, input=stdin,
+                            env={**os.environ, 'LC_ALL': 'C', 'DEBIAN_FRONTEND': 'noninteractive'})
+    if check and result.returncode:
+        raise RuntimeError(f'{args[0]} operation failed')
+    return result.stdout.strip()
+
+
+def locked(name):
+    lock = os.open(f'/run/lock/vim4-jetkvm-{name}.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    handle = os.fdopen(lock, 'r+')
+    if os.fstat(handle.fileno()).st_uid != 0:
+        handle.close()
+        raise RuntimeError('Invalid lock owner')
+    fcntl.flock(handle, fcntl.LOCK_EX)
+    return handle
+
+
+# Virtual media
+
+def image_fd(name):
+    if not isinstance(name, str) or '/' in name or name in ('', '.', '..') or '\0' in name:
+        raise ValueError('Image must be a file in the image directory')
+    directory = os.open(IMAGES, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        # JetKVM exposes every image read-only, including the Disk mode.
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    finally:
+        os.close(directory)
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode) or info.st_size < 512:
+        os.close(fd)
+        raise ValueError('Image must be a regular file of at least 512 bytes')
+    return fd
+
+
+def desired_links(mounted, microphone):
+    # NCM plus three HID functions already uses five IN endpoints; a sixth
+    # fails CRG CONFIG_EP on this board, so NCM yields to the medium.
+    links = (['mass_storage.disk0'] if mounted else []) + (['uac2.usb0'] if microphone else [])
+    return links or ['ncm.usb0']
+
+
+def relink(links, prepare=lambda: None, restore=lambda: None):
+    """Re-enumerate with exactly the given switchable functions linked."""
+    config = GADGET / 'configs/c.1'
+    udc = GADGET / 'UDC'
+    controller = udc.read_text().strip()
+    old_links = [name for name in SWITCHABLE if (config / name).is_symlink()]
+    if controller:
+        udc.write_text('\n')
+        # Allow the host to observe removal before presenting new interfaces.
+        time.sleep(0.5)
+    try:
+        for name in SWITCHABLE:
+            (config / name).unlink(missing_ok=True)
+        prepare()
+        for name in links:
+            (config / name).symlink_to(GADGET / 'functions' / name)
+    except Exception:
+        for name in SWITCHABLE:
+            (config / name).unlink(missing_ok=True)
+        restore()
+        for name in old_links:
+            (config / name).symlink_to(GADGET / 'functions' / name)
+        raise
+    finally:
+        if controller:
+            udc.write_text(controller)
+
+
+def configure_media(fd, cdrom):
+    if not LUN.is_dir():
+        raise RuntimeError('Virtual media gadget is not installed')
+    old = {key: (LUN / key).read_text().strip() for key in ('file', 'cdrom', 'ro')}
+    microphone = (GADGET / 'configs/c.1/uac2.usb0').is_symlink()
+
+    def prepare():
+        (LUN / 'file').write_text('\n')
+        (LUN / 'cdrom').write_text('1' if cdrom else '0')
+        (LUN / 'ro').write_text('1')
+        if fd is not None:
+            # The validated descriptor prevents a path swap between checking
+            # an image and the kernel opening its backing file.
+            (LUN / 'file').write_text(f'/proc/self/fd/{fd}')
+
+    def restore():
+        (LUN / 'file').write_text('\n')
+        for key in ('cdrom', 'ro', 'file'):
+            (LUN / key).write_text(old[key] or '\n')
+
+    relink(desired_links(fd is not None, microphone), prepare, restore)
+
+
+def media(action, req):
+    fd = None
+    if action == 'media-mount':
+        if type(req.get('cdrom')) is not bool:
+            raise ValueError('cdrom must be boolean')
+        fd = image_fd(req.get('file'))
+    try:
+        with locked('media'):
+            configure_media(fd, bool(req.get('cdrom')))
+    finally:
+        if fd is not None:
+            os.close(fd)
+    return {}
+
+
+def usb_emulation(req):
+    enabled = req.get('enabled')
+    if type(enabled) is not bool:
+        raise ValueError('enabled must be boolean')
+    with locked('media'):
+        udc = GADGET / 'UDC'
+        if bool(udc.read_text().strip()) == enabled:
+            return {}
+        if enabled:
+            controllers = sorted(os.listdir('/sys/class/udc'))
+            if len(controllers) != 1:
+                raise RuntimeError('Expected one USB device controller')
+            udc.write_text(controllers[0])
+        else:
+            udc.write_text('\n')
+    return {}
+
+
+# HDMI EDID and hot-plug
+
+def edid_bytes(value):
+    if not isinstance(value, str) or not re.fullmatch(r'(?:[0-9A-Fa-f]{2}){128}(?:[0-9A-Fa-f]{2}){0,128}', value):
+        raise ValueError('EDID must be 128 or 256 bytes of hexadecimal')
+    edid = bytes.fromhex(value)
+    if len(edid) not in (128, 256):
+        raise ValueError('EDID must contain one or two 128-byte blocks')
+    if edid[:8] != bytes([0, 255, 255, 255, 255, 255, 255, 0]):
+        raise ValueError('Missing EDID header')
+    return edid + bytes(256 - len(edid))
+
+
+def tvserver_run():
+    return run('systemctl', 'show', '-p', 'InvocationID', '--value', 'tvserver.service', check=False)
+
+
+def load_edid(edid):
+    # Fill the 1.4 and 2.0 slots so tvserver's later version selection
+    # cannot return the host to a vendor table.
+    with (HDMIRX / 'edid_with_port').open('wb', buffering=0) as sysfs:
+        sysfs.write(bytes([EDID_PORT]) + edid + edid)
+    fd = os.open(HDMIRX_DEVICE, os.O_RDWR)
+    try:
+        fcntl.ioctl(fd, HDMI_IOC_EDID_UPDATE_WITH_PORT, bytes([EDID_PORT]))
+    finally:
+        os.close(fd)
+
+
+def edid_apply(req):
+    edid = edid_bytes(req.get('edid'))
+    with locked('edid'):
+        marker = f'{tvserver_run()} {edid.hex()}'
+        # Loading pulses hot-plug. Skip a table this tvserver run already has
+        # so application restarts do not make the host renegotiate its display.
+        if req.get('force') is not True and EDID_LOADED.exists() and EDID_LOADED.read_text().strip() == marker:
+            return {'loaded': False}
+        deadline = time.monotonic() + 20
+        while TVSERVER_PENDING in (HDMIRX / 'edid_select').read_text() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        load_edid(edid)
+        EDID_LOADED.write_text(marker + '\n')
+    return {'loaded': True}
+
+
+def hotplug(req):
+    enabled = req.get('enabled')
+    if type(enabled) is not bool:
+        raise ValueError('enabled must be boolean')
+    with locked('edid'):
+        (HDMIRX / 'debug').write_text(f'hpd{int(enabled)} {DEBUG_PORT}\n')
+    return {}
+
+
+# Ethernet through NetworkManager
+
+IPV4_METHODS = {'dhcp': 'auto', 'static': 'manual', 'disabled': 'disabled'}
+IPV6_METHODS = {'slaac': 'auto', 'dhcpv6': 'dhcp', 'slaac_and_dhcpv6': 'auto', 'static': 'manual',
+                'link_local': 'link-local', 'disabled': 'disabled'}
+
+
+def ethernet_profile():
+    profile = run('nmcli', '-g', 'GENERAL.CON-UUID', 'device', 'show', 'eth0')
+    if not re.fullmatch(r'[0-9a-f-]{36}', profile):
+        raise ValueError('Ethernet has no active NetworkManager profile')
+    return profile
+
+
+def split_list(value):
+    return [item.strip() for item in value.split(',') if item.strip()]
+
+
+def network_get():
+    profile = ethernet_profile()
+    keys = ('ipv4.method', 'ipv4.addresses', 'ipv4.gateway', 'ipv4.dns',
+            'ipv6.method', 'ipv6.addresses', 'ipv6.gateway', 'ipv6.dns')
+    values = {key: run('nmcli', '--escape', 'no', '-g', key, 'connection', 'show', profile) for key in keys}
+    ipv4_mode = {v: k for k, v in IPV4_METHODS.items()}.get(values['ipv4.method'], 'dhcp')
+    ipv6_mode = {'auto': 'slaac', 'dhcp': 'dhcpv6', 'manual': 'static', 'link-local': 'link_local',
+                 'disabled': 'disabled', 'ignore': 'disabled'}.get(values['ipv6.method'], 'slaac')
+    result = {'ipv4_mode': ipv4_mode, 'ipv6_mode': ipv6_mode}
+    addresses = split_list(values['ipv4.addresses'])
+    if addresses:
+        interface = ipaddress.IPv4Interface(addresses[0])
+        result['ipv4_static'] = {'address': str(interface.ip), 'netmask': str(interface.netmask),
+                                 'gateway': values['ipv4.gateway'], 'dns': split_list(values['ipv4.dns'])}
+    addresses = split_list(values['ipv6.addresses'])
+    if addresses:
+        result['ipv6_static'] = {'prefix': addresses[0], 'gateway': values['ipv6.gateway'],
+                                 'dns': split_list(values['ipv6.dns'])}
+    return result
+
+
+def ipv4_properties(req):
+    mode = req.get('ipv4_mode')
+    if mode not in IPV4_METHODS:
+        raise ValueError('Invalid IPv4 mode')
+    if mode != 'static':
+        return {'ipv4.method': IPV4_METHODS[mode], 'ipv4.addresses': '', 'ipv4.gateway': '', 'ipv4.dns': ''}
+    static = req.get('ipv4_static')
+    if not isinstance(static, dict):
+        raise ValueError('Static IPv4 settings are required')
+    interface = ipaddress.IPv4Interface(f"{ipaddress.IPv4Address(static.get('address'))}/{ipaddress.IPv4Address(static.get('netmask'))}")
+    gateway = static.get('gateway') or ''
+    if gateway and ipaddress.IPv4Address(gateway) not in interface.network:
+        raise ValueError('Gateway must be in the subnet')
+    dns = [str(ipaddress.IPv4Address(server)) for server in static.get('dns') or []]
+    return {'ipv4.method': 'manual', 'ipv4.addresses': interface.with_prefixlen,
+            'ipv4.gateway': gateway, 'ipv4.dns': ','.join(dns)}
+
+
+def ipv6_properties(req):
+    mode = req.get('ipv6_mode')
+    if mode not in IPV6_METHODS:
+        raise ValueError('Invalid IPv6 mode')
+    if mode != 'static':
+        return {'ipv6.method': IPV6_METHODS[mode], 'ipv6.addresses': '', 'ipv6.gateway': '', 'ipv6.dns': ''}
+    static = req.get('ipv6_static')
+    if not isinstance(static, dict):
+        raise ValueError('Static IPv6 settings are required')
+    if '/' not in str(static.get('prefix')):
+        raise ValueError('IPv6 address requires a prefix length')
+    interface = ipaddress.IPv6Interface(static.get('prefix'))
+    gateway = str(ipaddress.IPv6Address(static.get('gateway')))
+    dns = [str(ipaddress.IPv6Address(server)) for server in static.get('dns') or []]
+    return {'ipv6.method': 'manual', 'ipv6.addresses': interface.with_prefixlen,
+            'ipv6.gateway': gateway, 'ipv6.dns': ','.join(dns)}
+
+
+def apply_profile(profile, device, new):
+    old = {key: run('nmcli', '--escape', 'no', '-g', key, 'connection', 'show', profile) for key in new}
+    if all(old[key] == value for key, value in new.items()):
+        return
+
+    def modify(properties):
+        # Clear address lists before changing the method; NetworkManager
+        # rejects manual mode without addresses and auto mode with stale ones.
+        ordered = sorted(properties.items(), key=lambda item: not item[0].endswith(('.addresses', '.gateway', '.dns')))
+        run('nmcli', 'connection', 'modify', profile, *[part for pair in ordered for part in pair])
+
+    modify(new)
+    try:
+        run('nmcli', 'device', 'reapply', device, timeout=20)
+    except Exception:
+        modify(old)
+        run('nmcli', 'device', 'reapply', device, timeout=20)
+        raise
+
+
+def network_set(req):
+    new = {**ipv4_properties(req), **ipv6_properties(req)}
+    with locked('network'):
+        apply_profile(ethernet_profile(), 'eth0', new)
+    return {}
+
+
+def dhcp_renew(req):
+    # NetworkManager renews a lease when the profile is activated again.
+    with locked('network'):
+        profile = ethernet_profile()
+        if run('nmcli', '-g', 'ipv4.method', 'connection', 'show', profile) != 'auto':
+            raise ValueError('Ethernet does not use DHCP')
+        run('nmcli', '--wait', '30', 'connection', 'up', 'uuid', profile, timeout=35)
+    return {}
+
+
+def hostname_set(req):
+    name = req.get('hostname', '')
+    if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?', name):
+        raise ValueError('Invalid hostname')
+    if run('hostnamectl', '--static') != name:
+        run('hostnamectl', 'set-hostname', name)
+    return {}
+
+
+def mdns_set(req):
+    mode = req.get('mode')
+    families = {'auto': ('yes', 'yes'), 'ipv4_only': ('yes', 'no'), 'ipv6_only': ('no', 'yes')}
+    if mode == 'disabled':
+        run('systemctl', 'disable', '--now', 'avahi-daemon.service', 'avahi-daemon.socket')
+        return {}
+    if mode not in families:
+        raise ValueError('Invalid mDNS mode')
+    text = AVAHI_CONF.read_text()
+    updated = text
+    for key, value in zip(('use-ipv4', 'use-ipv6'), families[mode]):
+        pattern = re.compile(rf'^#?\s*{key}\s*=.*$', re.MULTILINE)
+        if not pattern.search(updated):
+            raise RuntimeError('Unexpected Avahi configuration')
+        updated = pattern.sub(f'{key}={value}', updated, count=1)
+    if updated != text:
+        with tempfile.NamedTemporaryFile('w', dir=AVAHI_CONF.parent, delete=False) as pending:
+            pending.write(updated)
+        os.chmod(pending.name, 0o644)
+        os.replace(pending.name, AVAHI_CONF)
+    run('systemctl', 'enable', 'avahi-daemon.service', 'avahi-daemon.socket')
+    run('systemctl', 'restart' if updated != text else 'start', 'avahi-daemon.service')
+    return {}
+
+
+# Wi-Fi through NetworkManager
+
+def fields(line):
+    result, part, escaped = [], '', False
+    for char in line:
+        if escaped:
+            part += char
+            escaped = False
+        elif char == '\\':
+            escaped = True
+        elif char == ':':
+            result.append(part)
+            part = ''
+        else:
+            part += char
+    return result + [part]
+
+
+def wifi_device():
+    for line in run('nmcli', '-t', '-f', 'DEVICE,TYPE', 'device').splitlines():
+        device, kind = fields(line)[:2]
+        if kind == 'wifi':
+            return device
+    return None
+
+
+def wifi_profiles():
+    profiles = []
+    for line in run('nmcli', '-t', '-f', 'UUID,TYPE', 'connection', 'show').splitlines():
+        profile, kind = fields(line)[:2]
+        if kind != '802-11-wireless':
+            continue
+        values = run('nmcli', '--escape', 'no', '-g', '802-11-wireless.ssid,802-11-wireless-security.key-mgmt',
+                     'connection', 'show', profile).split('\n')
+        profiles.append({'uuid': profile, 'ssid': values[0], 'secure': len(values) > 1 and bool(values[1].strip())})
+    return profiles
+
+
+def rssi(signal):
+    # NetworkManager reports a quality percentage; approximate dBm for the UI.
+    return int(signal) // 2 - 100
+
+
+def wifi_get(req):
+    device = wifi_device()
+    if not device:
+        return {'available': False}
+    active = None
+    for line in run('nmcli', '-t', '-f', 'ACTIVE,SSID,CHAN,SIGNAL', 'device', 'wifi', 'list',
+                    'ifname', device, '--rescan', 'no').splitlines():
+        flag, ssid, channel, signal = fields(line)[:4]
+        if flag == 'yes':
+            active = {'ssid': ssid, 'channel': int(channel or 0), 'rssi': rssi(signal or 0)}
+    state = run('nmcli', '-g', 'GENERAL.STATE', 'device', 'show', device)
+    connected = state.startswith('100') and active is not None
+    networks = [{'ssid': p['ssid'], 'secure': p['secure'],
+                 'connected': connected and p['ssid'] == active['ssid']} for p in wifi_profiles()]
+    return {'available': True, 'connected': connected, 'channel': active['channel'] if connected else 0,
+            'rssi': active['rssi'] if connected else 0, 'max_networks': MAX_WIFI_NETWORKS, 'networks': networks}
+
+
+def wifi_scan(req):
+    device = wifi_device()
+    if not device:
+        raise ValueError('No Wi-Fi adapter is configured')
+    saved = {p['ssid'] for p in wifi_profiles()}
+    best = {}
+    for line in run('nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY', 'device', 'wifi', 'list', 'ifname', device,
+                    '--rescan', 'yes' if req.get('refresh') is True else 'no', timeout=30).splitlines():
+        ssid, signal, security = fields(line)[:3]
+        if ssid and (ssid not in best or rssi(signal) > best[ssid]['rssi']):
+            best[ssid] = {'ssid': ssid, 'rssi': rssi(signal), 'secure': security not in ('', '--'), 'saved': ssid in saved}
+    return {'scanning': False, 'networks': sorted(best.values(), key=lambda n: -n['rssi'])}
+
+
+def valid_ssid(ssid):
+    if not isinstance(ssid, str) or not 1 <= len(ssid.encode()) <= 32 or '\0' in ssid:
+        raise ValueError('Invalid SSID')
+    return ssid
+
+
+def keyfile_string(value):
+    # GLib key file escaping, applied to identifiers and secrets.
+    escaped = value.replace('\\', '\\\\').replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+    return '\\s' + escaped[1:] if escaped.startswith(' ') else escaped
+
+
+def wifi_save(req):
+    ssid = valid_ssid(req.get('ssid'))
+    password = req.get('password', '')
+    if not isinstance(password, str) or (password and not 8 <= len(password) <= 63) or any(c in password for c in '\n\r\0'):
+        raise ValueError('Invalid Wi-Fi password')
+    with locked('network'):
+        profiles = wifi_profiles()
+        existing = [p['uuid'] for p in profiles if p['ssid'] == ssid]
+        if not existing and len(profiles) >= MAX_WIFI_NETWORKS:
+            raise ValueError('Too many saved Wi-Fi networks')
+        # A changed password replaces the profile under the same UUID. The
+        # secret is written to a root-only keyfile, never to a command line.
+        for profile in existing:
+            run('nmcli', 'connection', 'delete', 'uuid', profile)
+        profile = existing[0] if existing else str(uuid.uuid4())
+        write_wifi_keyfile(profile, ssid, password)
+        return {}
+
+
+def write_wifi_keyfile(profile, ssid, password):
+    path = NM_CONNECTIONS / f'jetkvm-{profile}.nmconnection'
+    lines = ['[connection]', f'id={keyfile_string(ssid)}', f'uuid={profile}', 'type=wifi', 'autoconnect=true', '',
+             '[wifi]', 'mode=infrastructure', 'ssid=' + ''.join(f'{b};' for b in ssid.encode()), '']
+    if password:
+        lines += ['[wifi-security]', 'key-mgmt=wpa-psk', f'psk={keyfile_string(password)}', '']
+    lines += ['[ipv4]', 'method=auto', '', '[ipv6]', 'method=auto', '']
+    with tempfile.NamedTemporaryFile('w', dir=NM_CONNECTIONS, delete=False, prefix='.jetkvm-') as pending:
+        os.fchmod(pending.fileno(), 0o600)
+        pending.write('\n'.join(lines))
+    os.replace(pending.name, path)
+    run('nmcli', 'connection', 'load', str(path))
+
+
+def wifi_profile(ssid):
+    for profile in wifi_profiles():
+        if profile['ssid'] == ssid:
+            return profile['uuid']
+    raise ValueError('Wi-Fi network is not saved')
+
+
+def wifi_connect(req):
+    profile = wifi_profile(valid_ssid(req.get('ssid')))
+    device = wifi_device()
+    if not device:
+        raise ValueError('No Wi-Fi adapter is configured')
+    result = subprocess.run(['nmcli', '--wait', '40', 'connection', 'up', 'uuid', profile, 'ifname', device],
+                            capture_output=True, text=True, timeout=50, env={**os.environ, 'LC_ALL': 'C'})
+    if result.returncode:
+        reason = 'connection failed'
+        if 'Secrets were required' in result.stderr or 'password' in result.stderr.lower():
+            reason = 'wrong password'
+        elif 'No network with SSID' in result.stderr or 'could not be found' in result.stderr:
+            reason = 'network not found'
+        return {'error': reason}
+    return {}
+
+
+def wifi_remove(req):
+    with locked('network'):
+        run('nmcli', 'connection', 'delete', 'uuid', wifi_profile(valid_ssid(req.get('ssid'))))
+    return {}
+
+
+# System
+
+def reboot(req):
+    os.sync()
+    run('systemd-run', '--on-active=3', '/usr/bin/systemctl', 'reboot')
+    return {}
+
+
+TAILSCALE_DEFAULT_CONTROL = 'https://controlplane.tailscale.com'
+
+
+def tailscale_login(req):
+    """Start a login to the given control server unless it is already in use.
+
+    Ubuntu's tailscale has no "set --login-server"; the server is chosen at
+    login. The login waits for browser authorization, so it runs detached and
+    tailscaled publishes the URL in its status.
+    """
+    if not shutil.which('tailscale'):
+        raise RuntimeError('tailscale is not installed')
+    url = req.get('url')
+    if not isinstance(url, str) or not re.fullmatch(r'https?://[A-Za-z0-9.-]+(?::[0-9]{1,5})?', url):
+        raise ValueError('Invalid control URL')
+    try:
+        prefs = json.loads(run('tailscale', 'debug', 'prefs', timeout=15))
+        status = json.loads(run('tailscale', 'status', '--json', check=False, timeout=15) or '{}')
+    except json.JSONDecodeError:
+        raise RuntimeError('tailscale returned unreadable state')
+    current = prefs.get('ControlURL') or TAILSCALE_DEFAULT_CONTROL
+    if current == url and status.get('BackendState') == 'Running':
+        return {}
+    subprocess.Popen(['tailscale', 'login', '--login-server=' + url, '--accept-dns=false', '--timeout=10m'],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    return {}
+
+
+def update_install(req):
+    """Install a downloaded application package and verify it.
+
+    The application reboots afterwards through its normal reboot path. The
+    package scripts do not restart vim4-kvm.service, so dpkg is not killed
+    with the application's cgroup.
+    """
+    source = Path(req.get('path', '')).resolve(strict=True)
+    if source.parent != STATE or source.suffix != '.deb':
+        raise ValueError('Package must be in the application state directory')
+    UPDATE_STAGING.mkdir(mode=0o700, exist_ok=True)
+    # Copy privately first: the application cannot swap the package between
+    # verification and installation.
+    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    package = UPDATE_STAGING / 'vim4-jetkvm.deb'
+    with os.fdopen(fd, 'rb') as incoming:
+        info = os.fstat(incoming.fileno())
+        if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 256 << 20:
+            raise ValueError('Invalid package size or type')
+        with package.open('wb') as output:
+            shutil.copyfileobj(incoming, output)
+    for field, expected in (('Package', PACKAGE), ('Architecture', 'arm64')):
+        if run('dpkg-deb', '-f', str(package), field) != expected:
+            raise ValueError('Package targets a different platform')
+    # dpkg --no-act does not check Depends; simulate APT and refuse platform changes.
+    simulation = subprocess.run(['apt-get', '--simulate', '--no-remove', 'install', str(package)], capture_output=True,
+                                text=True, timeout=120, env={**os.environ, 'LC_ALL': 'C'})
+    if simulation.returncode:
+        raise ValueError('Update requires newer platform packages; deploy the Ubuntu components first')
+    for line in simulation.stdout.splitlines():
+        if line.startswith(('Inst ', 'Remv ')) and line.split()[1] != PACKAGE:
+            raise ValueError('Update requires platform packages; deploy the Ubuntu components first')
+    with locked('update'):
+        run('dpkg', '--force-confdef', '--force-confold', '-i', str(package), timeout=600)
+        package.unlink()
+        # Verify every installed file before the caller reboots.
+        if run('dpkg', '--verify', PACKAGE, check=False):
+            raise RuntimeError('Installed files do not match the package')
+        os.sync()
+    return {}
+
+
+OPERATIONS = {
+    'media-mount': lambda req: media('media-mount', req),
+    'media-eject': lambda req: media('media-eject', req),
+    'usb-emulation': usb_emulation,
+    'edid-apply': edid_apply,
+    'hotplug': hotplug,
+    'network-get': lambda req: network_get(),
+    'network-set': network_set,
+    'dhcp-renew': dhcp_renew,
+    'hostname-set': hostname_set,
+    'mdns-set': mdns_set,
+    'wifi-get': wifi_get,
+    'wifi-scan': wifi_scan,
+    'wifi-save': wifi_save,
+    'wifi-connect': wifi_connect,
+    'wifi-remove': wifi_remove,
+    'reboot': reboot,
+    'tailscale-login': tailscale_login,
+    'update-install': update_install,
+}
+
+
+def main(args):
+    if len(args) != 1 or args[0] not in OPERATIONS:
+        raise ValueError('Unsupported operation')
+    request = json.loads(sys.stdin.read(16385) or '{}')
+    if not isinstance(request, dict):
+        raise ValueError('Expected an object')
+    return OPERATIONS[args[0]](request)
+
+
+if __name__ == '__main__':
+    try:
+        print(json.dumps(main(sys.argv[1:])))
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
+        # Request values can contain credentials; report only the error class
+        # for parameter failures and the helper's own messages otherwise.
+        message = str(error) if isinstance(error, (ValueError, RuntimeError)) else type(error).__name__
+        print(message, file=sys.stderr)
+        sys.exit(1)

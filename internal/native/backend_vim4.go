@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,41 +14,77 @@ import (
 	"github.com/jetkvm/kvm/internal/gstcapture"
 )
 
+const hdmiInfoPath = "/sys/class/hdmirx/hdmirx0/info"
+
 // The headless backend does not run the local display loop or native supervisor.
 // The system service owns HDMI source setup; this backend owns only the encoder.
 type vim4Backend struct {
 	EmptyNativeInterface
-	opts   NativeOptions
-	mu     sync.Mutex
-	cancel context.CancelFunc
-	done   chan struct{}
-	status atomic.Uint32
+	opts      NativeOptions
+	mu        sync.Mutex
+	cancel    context.CancelFunc
+	done      chan struct{}
+	status    atomic.Uint32
+	codec     int
+	quality   float64
+	keyframes chan struct{}
 }
 
 var _ NativeInterface = (*vim4Backend)(nil)
 
 func NewBackend(opts NativeOptions) (NativeInterface, error) {
-	return &vim4Backend{opts: opts}, nil
+	quality := opts.DefaultQualityFactor
+	if quality <= 0 || quality > 1 {
+		quality = 1
+	}
+	return &vim4Backend{opts: opts, quality: quality, keyframes: make(chan struct{}, 1)}, nil
 }
 
 func (v *vim4Backend) VideoSetCodecType(codec int) error {
-	if codec != 0 {
-		return errors.New("VIM4 currently supports H.264 only")
+	if codec != 0 && codec != 1 {
+		return fmt.Errorf("unsupported codec type %d", codec)
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.codec != codec {
+		v.codec = codec
+		v.restartLocked()
 	}
 	return nil
 }
-func (v *vim4Backend) VideoGetQualityFactor() (float64, error) { return 1, nil }
+
+func (v *vim4Backend) VideoGetCodecType() (int, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.codec, nil
+}
+
+func (v *vim4Backend) VideoGetQualityFactor() (float64, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.quality, nil
+}
+
+// VideoSetQualityFactor selects the encoder bitrate. The vendor encoder cannot
+// change its bitrate while running, so a running pipeline is reopened.
 func (v *vim4Backend) VideoSetQualityFactor(factor float64) error {
-	if factor != 1 {
-		return errors.New("VIM4 output scaling is managed by the HDMI service")
+	if factor <= 0 || factor > 1 {
+		return fmt.Errorf("quality factor %v is outside (0, 1]", factor)
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.quality != factor {
+		v.quality = factor
+		v.restartLocked()
 	}
 	return nil
 }
+
 func (v *vim4Backend) VideoSetEDID(string) error {
-	return errors.New("VIM4 EDID control is not implemented")
+	return errors.New("the VIM4 HDMI receiver EDID is set by the application")
 }
 func (v *vim4Backend) VideoGetEDID() (string, error) {
-	return "", errors.New("VIM4 EDID control is not implemented")
+	return "", errors.New("the VIM4 HDMI receiver EDID is set by the application")
 }
 func (v *vim4Backend) VideoSetSleepMode(enabled bool) error {
 	if enabled {
@@ -62,33 +99,66 @@ func (v *vim4Backend) VideoGetStreamingStatus() VideoStreamingStatus {
 	return VideoStreamingStatus(v.status.Load())
 }
 
+// VideoRequestKeyframe asks the running encoder for an IDR frame, for a viewer
+// that joined a running stream or reported loss with a PLI or FIR.
+func (v *vim4Backend) VideoRequestKeyframe() {
+	select {
+	case v.keyframes <- struct{}{}:
+	default:
+	}
+}
+
 func (v *vim4Backend) VideoStart() error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	if v.done != nil {
-		select {
-		case <-v.done:
-		default:
-			return nil
-		}
+	if v.runningLocked() {
+		v.VideoRequestKeyframe()
+		return nil
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	v.cancel = cancel
-	v.done = make(chan struct{})
-	go v.capture(ctx, v.done)
+	v.startLocked()
 	return nil
 }
 
 func (v *vim4Backend) VideoStop() error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	v.stopLocked()
+	return nil
+}
+
+func (v *vim4Backend) runningLocked() bool {
+	if v.done == nil {
+		return false
+	}
+	select {
+	case <-v.done:
+		return false
+	default:
+		return true
+	}
+}
+
+func (v *vim4Backend) startLocked() {
+	ctx, cancel := context.WithCancel(context.Background())
+	v.cancel = cancel
+	v.done = make(chan struct{})
+	go v.capture(ctx, v.done, v.codec, v.quality)
+}
+
+func (v *vim4Backend) stopLocked() {
 	if v.cancel != nil {
 		v.cancel()
 		<-v.done
 		v.cancel = nil
 		v.done = nil
 	}
-	return nil
+}
+
+func (v *vim4Backend) restartLocked() {
+	if v.runningLocked() {
+		v.stopLocked()
+		v.startLocked()
+	}
 }
 
 func (v *vim4Backend) report(state VideoState) {
@@ -98,15 +168,67 @@ func (v *vim4Backend) report(state VideoState) {
 	}
 }
 
-func (v *vim4Backend) capture(ctx context.Context, done chan struct{}) {
+// capture keeps the pipeline running until cancellation. A pipeline error,
+// such as a lost HDMI signal, or a changed source rate reopens the encoder.
+func (v *vim4Backend) capture(ctx context.Context, done chan struct{}, codec int, quality float64) {
 	defer close(done)
+	defer v.report(VideoState{Streaming: VideoStreamingStatusInactive})
+	for ctx.Err() == nil {
+		info, _ := os.ReadFile(hdmiInfoPath)
+		rate := hdmiFrameRate(string(info))
+		if rate == 0 {
+			rate = vim4DefaultFrameRate
+		}
+		err := v.runPipeline(ctx, codec, quality, rate)
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			nativeLogger.Warn().Err(err).Msg("VIM4 capture stopped; retrying")
+			v.report(VideoState{Streaming: VideoStreamingStatusInactive, Error: "no_signal"})
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
+			}
+		}
+	}
+}
+
+func (v *vim4Backend) runPipeline(ctx context.Context, codec int, quality float64, rate int) error {
+	pipelineCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	rateChanged := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		var change rateChange
+		for {
+			select {
+			case <-pipelineCtx.Done():
+				return
+			case <-ticker.C:
+				info, _ := os.ReadFile(hdmiInfoPath)
+				if change.observe(rate, hdmiFrameRate(string(info))) {
+					close(rateChanged)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	// A new encoder starts with an IDR frame; drop requests made for the old one.
+	select {
+	case <-v.keyframes:
+	default:
+	}
+	nativeLogger.Info().Int("codec", codec).Int("bitrate_kbps", vim4Bitrate(quality)).Int("fps", rate).Msg("VIM4 encoder starting")
 	lastState := VideoState{}
 	frameCount := 0
-	// Use the encoder's maximum supported bitrate for 4K desktop detail.
-	err := gstcapture.Run(ctx, "vfmcapsrc ! queue max-size-buffers=3 max-size-bytes=0 max-size-time=0 ! amlvenc bitrate=12000 gop=30 ! video/x-h264 ! h264parse config-interval=-1 ! video/x-h264,stream-format=byte-stream,alignment=au ! appsink name=frames sync=false", func(frame gstcapture.Frame) error {
+	err := gstcapture.Run(pipelineCtx, vim4Pipeline(codec, quality, rate), v.keyframes, func(frame gstcapture.Frame) error {
 		duration := frame.Duration
 		if duration <= 0 {
-			duration = time.Second / 60
+			duration = time.Second / time.Duration(rate)
 		}
 		state := VideoState{Ready: true, Streaming: VideoStreamingStatusActive, Width: frame.Width, Height: frame.Height, FramePerSecond: float64(time.Second) / float64(duration)}
 		frameCount++
@@ -120,10 +242,14 @@ func (v *vim4Backend) capture(ctx context.Context, done chan struct{}) {
 		}
 		return nil
 	})
-	state := VideoState{Streaming: VideoStreamingStatusInactive}
-	if err != nil && !errors.Is(err, context.Canceled) {
-		state.Error = "no_signal"
-		nativeLogger.Error().Err(err).Msg("VIM4 capture stopped")
+	select {
+	case <-rateChanged:
+		nativeLogger.Info().Int("previous_fps", rate).Msg("VIM4 HDMI frame rate changed; reopening the encoder")
+		return nil
+	default:
 	}
-	v.report(state)
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
 }

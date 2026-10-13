@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jetkvm/kvm/internal/platform"
 	"github.com/jetkvm/kvm/internal/timesync"
 )
 
@@ -37,6 +38,15 @@ func isTimeSyncNeeded() bool {
 	}
 
 	return false
+}
+
+// isSystemTimeSynced reports whether the clock can be trusted for TLS
+// certificates and updates. On VIM4, Ubuntu's chrony owns the clock.
+func isSystemTimeSynced() bool {
+	if platform.VIM4 {
+		return vim4TimeSynced()
+	}
+	return !isTimeSyncNeeded() && timeSync.IsSyncSuccess()
 }
 
 func initTimeSync() {
