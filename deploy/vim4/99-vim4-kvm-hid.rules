@@ -1,1 +1,0 @@
-SUBSYSTEM=="hidg", KERNEL=="hidg[0-2]", GROUP="input", MODE="0660"

@@ -6,30 +6,24 @@ USB-C PD negotiation. Preserve licenses and existing authorship.
 
 ## Build and install
 
-Build the UI with Node 22.21.1 and npm, then copy the source and generated
-`static/` directory to the board:
+The workspace builds and packages this application as the `vim4-jetkvm` Ubuntu
+component (see the workspace `docs/board-tools.md`):
 
 ```sh
-npm ci --prefix ui --ignore-scripts
-npm --prefix ui run build:device
+python3 tools/workspace.py build jetkvm     # on Linux ARM64 or in the builder
 ```
 
-On the Ubuntu VIM4:
+The package installs `/opt/vim4-jetkvm/jetkvm` and `vim4-kvm.service`, but does
+not enable it. Select JetKVM in the vim4-manager dashboard (port 80): it disables
+and stops `nanokvm.service`, then enables and starts this one. The units declare
+Conflicts= with each other because both use HDMI capture, the encoder, the HID
+endpoints and port **8080**. The HID udev rule comes from the vim4-nanokvm package.
 
-```sh
-sudo apt-get install golang-go build-essential pkg-config \
-  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libasound2-dev
-go test -tags vim4 ./...
-go build -tags vim4 -o /tmp/vim4-kvm ./cmd
-sudo sh deploy/vim4/install.sh /tmp/vim4-kvm
-```
+Configuration lives in `/var/lib/jetkvm/config.json` (systemd StateDirectory).
+The test board uses local passwordless mode; the Ubuntu account and password
+are unchanged.
 
-Go selects the toolchain specified in go.mod. The service listens on port
-**8080**. Open http://192.168.50.210:8080 and complete local authentication setup.
-Configuration lives in `/var/lib/vim4-kvm/config.json`. The test board uses local
-passwordless mode; the Ubuntu account and password are unchanged.
-
-Prerequisites: working vfmcapsrc and amlvenc plugins, vim4-kvm-hdmi.service,
+Prerequisites: the vim4-vfmcap and vim4-amlvenc packages, vim4-kvm-hdmi.service,
 vim4-kvm-gadget.service, vim4-kvm-pd.service, and the eight/six/four-byte HID
 descriptors installed by the board gadget script.
 
