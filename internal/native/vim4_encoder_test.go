@@ -3,15 +3,27 @@
 package native
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
 
 func TestVIM4BitrateFollowsQualityFactor(t *testing.T) {
-	for quality, want := range map[float64]int{1: 12000, 0.5: 6000, 0.1: 1200, 0.01: 1000} {
+	for quality, want := range map[float64]int{1: 12000, 0.5: 6000, 0.1: 1200, 0.01: 1000, 2.5: 30000, 5: 60000} {
 		if got := vim4Bitrate(quality); got != want {
 			t.Errorf("quality %v: bitrate %d, want %d", quality, got, want)
 		}
+	}
+}
+
+func TestVIM4CustomBitrateBounds(t *testing.T) {
+	for _, factor := range []float64{0, -1, 5.001, math.NaN(), math.Inf(1)} {
+		if validVIM4Quality(factor) {
+			t.Fatalf("accepted invalid quality factor %v", factor)
+		}
+	}
+	if !validVIM4Quality(5) || !strings.Contains(vim4Pipeline(0, 5, 60), "bitrate=60000") {
+		t.Fatal("60 Mbps custom bitrate did not reach the encoder")
 	}
 }
 

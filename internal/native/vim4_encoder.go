@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	// The stock encoder plugin's maximum; the High quality factor uses it.
-	vim4MaxBitrateKbps = 12000
-	vim4MinBitrateKbps = 1000
+	// Preserve existing quality presets and saved factors when extending the range.
+	vim4QualityBitrateKbps = 12000
+	vim4MaxBitrateKbps     = 60000
+	vim4MinBitrateKbps     = 1000
 	// Long GOPs keep 4K bitrate for detail; viewers that join or lose packets
 	// request an IDR frame instead of waiting for the next periodic one.
 	vim4GOP = 120
@@ -21,9 +22,13 @@ const (
 	vim4DefaultFrameRate = 30
 )
 
-// vim4Bitrate maps JetKVM's stream quality factor (0.1–1) to a bitrate.
+// vim4Bitrate maps quality factors to kbps; custom rates can use factors up to 5.
 func vim4Bitrate(quality float64) int {
-	return max(vim4MinBitrateKbps, int(math.Round(vim4MaxBitrateKbps*quality)))
+	return min(vim4MaxBitrateKbps, max(vim4MinBitrateKbps, int(math.Round(vim4QualityBitrateKbps*quality))))
+}
+
+func validVIM4Quality(factor float64) bool {
+	return !math.IsNaN(factor) && factor > 0 && factor <= float64(vim4MaxBitrateKbps)/vim4QualityBitrateKbps
 }
 
 // vim4Pipeline builds the capture and hardware encoder pipeline. codec 1 is H.265.

@@ -59,6 +59,13 @@ helper validates every request itself; sudoers allows only this program.
 
 ## Feature mapping
 
+VIM4's video settings also expose a 1000–60000 kbps custom bitrate input.
+Existing quality presets remain 12/6/1.2 Mbps. Custom values use the existing
+persisted quality factor (kbps / 12000, at most 5) and survive restart; the
+appliance backend retains its original range. Deploy the matching vim4-amlvenc
+plugin alongside the application; older plugins accept at most 12000 kbps.
+Higher targets require more bandwidth and do not guarantee the actual bitrate.
+
 The UI hides features through `getDeviceCapabilities`. The appliance build keeps
 reporting all of its features; new capabilities `cloud`, `display`,
 `usb_config`, `time_sync`, `url_media` and `update_source` let a platform hide

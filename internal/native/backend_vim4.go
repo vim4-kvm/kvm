@@ -34,7 +34,7 @@ var _ NativeInterface = (*vim4Backend)(nil)
 
 func NewBackend(opts NativeOptions) (NativeInterface, error) {
 	quality := opts.DefaultQualityFactor
-	if quality <= 0 || quality > 1 {
+	if !validVIM4Quality(quality) {
 		quality = 1
 	}
 	return &vim4Backend{opts: opts, quality: quality, keyframes: make(chan struct{}, 1)}, nil
@@ -68,8 +68,8 @@ func (v *vim4Backend) VideoGetQualityFactor() (float64, error) {
 // VideoSetQualityFactor selects the encoder bitrate. The vendor encoder cannot
 // change its bitrate while running, so a running pipeline is reopened.
 func (v *vim4Backend) VideoSetQualityFactor(factor float64) error {
-	if factor <= 0 || factor > 1 {
-		return fmt.Errorf("quality factor %v is outside (0, 1]", factor)
+	if !validVIM4Quality(factor) {
+		return fmt.Errorf("quality factor %v is outside (0, 5]", factor)
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()

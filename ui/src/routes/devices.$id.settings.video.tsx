@@ -13,6 +13,7 @@ import Fieldset from "@components/Fieldset";
 import notifications from "@/notifications";
 import { isLinuxDesktop } from "@/utils";
 import { m } from "@localizations/messages.js";
+import { Vim4BitrateInput } from "@components/Vim4BitrateInput";
 
 interface EDIDPreset {
   name: string;
@@ -46,6 +47,7 @@ const browserCodecOptions = h265Supported
 
 export default function SettingsVideoRoute() {
   const customEdid = useCapability("custom_edid");
+  const customBitrate = useCapability("custom_bitrate");
   const { send } = useJsonRpc();
   const [streamQuality, setStreamQuality] = useState("1");
   const [streamQualityLoading, setStreamQualityLoading] = useState(true);
@@ -182,7 +184,7 @@ export default function SettingsVideoRoute() {
 
       notifications.success(
         m.video_stream_quality_set({
-          quality: streamQualityOptions.find(x => x.value === factor)?.label || "Unknown",
+          quality: streamQualityOptions.find(x => x.value === factor)?.label || `${Math.round(Number(factor) * 12000) / 1000} Mbps`,
         }),
       );
       setStreamQuality(factor);
@@ -284,10 +286,15 @@ export default function SettingsVideoRoute() {
                 label=""
                 disabled={streamQualityLoading}
                 value={streamQuality}
-                options={streamQualityOptions}
+                options={customBitrate && !streamQualityOptions.some(option => option.value === streamQuality)
+                  ? [...streamQualityOptions, { value: streamQuality, label: `${Math.round(Number(streamQuality) * 12000) / 1000} Mbps` }]
+                  : streamQualityOptions}
                 onChange={e => handleStreamQualityChange(e.target.value)}
               />
             </SettingsItem>
+
+            {customBitrate && <Vim4BitrateInput factor={Number(streamQuality)} disabled={streamQualityLoading}
+              onApply={factor => handleStreamQualityChange(String(factor))} />}
 
             <SettingsItem
               title={m.video_codec_title()}
