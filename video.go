@@ -114,6 +114,23 @@ func updateHostDisplayAdvertisement(reason string, force bool) error {
 	return setHostDisplayAdvertisedLocked(shouldAdvertiseHostDisplayLocked(), reason, force)
 }
 
+// rpcReconnectHostDisplay reloads the current EDID, pulsing hot-plug so a
+// host that dropped the display, such as for a screen-sharing virtual
+// display, adds it back. The VIM4 helper otherwise skips a loaded table.
+func rpcReconnectHostDisplay() error {
+	hostDisplayAdvertiseLock.Lock()
+	defer hostDisplayAdvertiseLock.Unlock()
+
+	if !hostDisplayAdvertised {
+		return fmt.Errorf("host display is hidden")
+	}
+	edid := configuredVideoEDID()
+	if platform.VIM4 {
+		return vim4Helper(30*time.Second, "edid-apply", map[string]any{"edid": edid, "force": true}, nil)
+	}
+	return nativeInstance.VideoSetEDID(edid)
+}
+
 type rpcVideoSleepModeResponse struct {
 	Supported bool `json:"supported"`
 	Enabled   bool `json:"enabled"`

@@ -33,7 +33,9 @@ DEBUG_PORT = 1
 HDMI_IOC_EDID_UPDATE_WITH_PORT = 0x40014813  # _IOW('H', 0x13, unsigned char)
 # tvserver writes this selection before loading its own EDID set at startup.
 TVSERVER_PENDING = '0x222'
-EDID_LOADED = Path('/run/vim4-jetkvm-edid.loaded')
+# Shared with NanoKVM's vim4-edid: the tvserver run and the table now loaded,
+# so either application reloads after the other changed it.
+EDID_LOADED = Path('/run/vim4-edid.loaded')
 NM_CONNECTIONS = Path('/etc/NetworkManager/system-connections')
 AVAHI_CONF = Path('/etc/avahi/avahi-daemon.conf')
 UPDATE_STAGING = Path('/var/lib/vim4-jetkvm-update')

@@ -1462,6 +1462,7 @@ var rpcHandlers = map[string]RPCHandler{
 	"getEDID":                    {Func: rpcGetEDID},
 	"setEDID":                    {Func: rpcSetEDID, Params: []string{"edid"}},
 	"getEDIDPresets":             {Func: rpcGetEDIDPresets},
+	"reconnectHostDisplay":       {Func: rpcReconnectHostDisplay},
 	"getHostDisplayIdleMode":     {Func: rpcGetHostDisplayIdleMode},
 	"setHostDisplayIdleMode":     {Func: rpcSetHostDisplayIdleMode, Params: []string{"enabled"}},
 	"getVideoLogStatus":          {Func: rpcGetVideoLogStatus},

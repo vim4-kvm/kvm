@@ -225,6 +225,20 @@ export default function SettingsVideoRoute() {
     });
   };
 
+  const handleReconnectHdmi = () => {
+    setEdidLoading(true);
+    void send("reconnectHostDisplay", {}, (resp: JsonRpcResponse) => {
+      setEdidLoading(false);
+      if ("error" in resp) {
+        notifications.error(
+          m.video_failed_reconnect_hdmi({ error: resp.error.data || m.unknown_error() }),
+        );
+        return;
+      }
+      notifications.success(m.video_reconnect_hdmi_success());
+    });
+  };
+
   const handleEDIDChange = (newEdid: string) => {
     const matched = edidPresets.find(p => p.edid.toLowerCase() === newEdid.toLowerCase());
     setEdidLoading(true);
@@ -436,6 +450,19 @@ export default function SettingsVideoRoute() {
                     ...edidPresets.map(p => ({ value: p.edid, label: p.name })),
                     ...(customEdid ? [{ value: "custom", label: m.video_edid_custom() }] : []),
                   ]}
+                />
+              </SettingsItem>
+              <SettingsItem
+                title={m.video_reconnect_hdmi()}
+                description={m.video_reconnect_hdmi_description()}
+              >
+                <Button
+                  size="SM"
+                  theme="light"
+                  text={m.video_reconnect_hdmi()}
+                  loading={edidLoading}
+                  disabled={edid === null}
+                  onClick={handleReconnectHdmi}
                 />
               </SettingsItem>
               {customEdid && customEdidValue !== null && (
