@@ -22,7 +22,16 @@ var edidPresets = []EDIDPreset{
 
 func rpcGetEDIDPresets() ([]EDIDPreset, error) {
 	if platform.VIM4 {
-		return append(append([]EDIDPreset{}, edidPresets...), vim4EDIDPresets...), nil
+		return append(append([]EDIDPreset{}, vim4EDIDPresets...), edidPresets...), nil
 	}
 	return edidPresets, nil
+}
+
+// Keep startup and configuration migration aligned with the UI reset action,
+// which selects the first preset returned by getEDIDPresets.
+func defaultVideoEDID() string {
+	if platform.VIM4 {
+		return vim4EDIDPresets[0].EDID
+	}
+	return native.DefaultEDID
 }

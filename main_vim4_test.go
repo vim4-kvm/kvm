@@ -64,14 +64,35 @@ func TestNetworkManagerLeaseParsing(t *testing.T) {
 	}
 }
 
-func TestVIM4EDIDPresetsKeepJetKVMDefaultFirst(t *testing.T) {
+func TestVIM4EDIDPresetsKeepPlatformDefaultFirst(t *testing.T) {
 	presets, _ := rpcGetEDIDPresets()
-	if presets[0].EDID != native.DefaultEDID || len(presets) != len(edidPresets)+len(vim4EDIDPresets) {
+	if presets[0].EDID != defaultVideoEDID() || len(presets) != len(edidPresets)+len(vim4EDIDPresets) {
 		t.Fatalf("unexpected preset order: %v", presets[0].Name)
 	}
 	for _, preset := range vim4EDIDPresets {
 		if len(preset.EDID) != 512 {
 			t.Errorf("%s is not a two-block EDID", preset.Name)
+		}
+	}
+}
+
+func TestVIM4DefaultEDIDAndSavedSelections(t *testing.T) {
+	previous := config
+	t.Cleanup(func() { config = previous })
+	initial := getDefaultConfig()
+	config = &initial
+	wantDefault := vim4EDIDPresets[0].EDID
+	if got := configuredVideoEDID(); got != wantDefault {
+		t.Fatal("first startup did not select the VIM4 4K60 EDID")
+	}
+	config.EdidString = native.DisabledEDID
+	if got := configuredVideoEDID(); got != wantDefault {
+		t.Fatal("restoring a hidden display did not use the platform default")
+	}
+	for _, saved := range []string{native.DefaultEDID, vim4EDIDPresets[1].EDID, edidPresets[1].EDID} {
+		config.EdidString = saved
+		if got := configuredVideoEDID(); got != saved {
+			t.Fatal("saved EDID selection was replaced with the platform default")
 		}
 	}
 }

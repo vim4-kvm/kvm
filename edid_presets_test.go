@@ -5,8 +5,6 @@ package kvm
 import (
 	"encoding/hex"
 	"testing"
-
-	"github.com/jetkvm/kvm/internal/native"
 )
 
 func TestEDIDPresets(t *testing.T) {
@@ -17,7 +15,7 @@ func TestEDIDPresets(t *testing.T) {
 	if len(presets) == 0 {
 		t.Fatal("no EDID presets")
 	}
-	if presets[0].EDID != native.DefaultEDID {
+	if presets[0].EDID != defaultVideoEDID() {
 		t.Errorf("first preset must be the default EDID, got %q", presets[0].Name)
 	}
 

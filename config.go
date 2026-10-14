@@ -11,7 +11,6 @@ import (
 
 	"github.com/jetkvm/kvm/internal/confparser"
 	"github.com/jetkvm/kvm/internal/logging"
-	"github.com/jetkvm/kvm/internal/native"
 	"github.com/jetkvm/kvm/internal/network/types"
 	"github.com/jetkvm/kvm/internal/sync"
 	"github.com/jetkvm/kvm/internal/usbgadget"
@@ -316,7 +315,7 @@ func LoadConfig() {
 	// Until rolling logs land, do not persist verbose levels across reboots.
 	loadedConfig.DefaultLogLevel = "WARN"
 
-	// Migrate prior JetKVM defaults to the current native.DefaultEDID:
+	// Migrate prior JetKVM defaults to the platform's current default EDID:
 	//   - Toshiba TSB chip default (pre-JetKVM-v1 EDID, no CEA extension)
 	//   - JetKVM v1 EDID without the 1280x720@120 DTD (the previous default that
 	//     advertised only 1080p60 + 720p60 in the base block)
@@ -329,7 +328,7 @@ func LoadConfig() {
 		strings.EqualFold(loadedConfig.EdidString, tsbDefaultEDID) ||
 		strings.EqualFold(loadedConfig.EdidString, jkvV1NoHighRefresh) ||
 		strings.EqualFold(loadedConfig.EdidString, jkvV1CtaOnly120) {
-		loadedConfig.EdidString = native.DefaultEDID
+		loadedConfig.EdidString = defaultVideoEDID()
 	}
 
 	config = &loadedConfig

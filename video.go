@@ -45,7 +45,7 @@ var (
 
 func configuredVideoEDID() string {
 	if config.EdidString == "" || isInternalDisabledEDID(config.EdidString) {
-		return native.DefaultEDID
+		return defaultVideoEDID()
 	}
 	return config.EdidString
 }
