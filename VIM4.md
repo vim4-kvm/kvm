@@ -60,7 +60,11 @@ helper validates every request itself; sudoers allows only this program.
 ## Feature mapping
 
 VIM4's video settings also expose a 1000–60000 kbps custom bitrate input.
-Existing quality presets remain 12/6/1.2 Mbps. Custom values use the existing
+The original 12/6/1.2 Mbps presets remain alongside additional presets up to
+60 Mbps. One control groups the native preset dropdown, a 0.1 Mbps slider and
+an exact kbps input. Edits take effect only when Save is pressed; refreshing
+loads the saved device value, and failed saves restore the previous value.
+Custom values use the existing
 persisted quality factor (kbps / 12000, at most 5) and survive restart; the
 appliance backend retains its original range. Deploy the matching vim4-amlvenc
 plugin alongside the application; older plugins accept at most 12000 kbps.

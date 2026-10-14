@@ -276,7 +276,10 @@ export default function SettingsVideoRoute() {
 
         <div className="space-y-4">
           <div className="space-y-4">
-            <SettingsItem
+            {customBitrate ? (
+              <Vim4BitrateInput factor={Number(streamQuality)} disabled={streamQualityLoading}
+                onApply={factor => handleStreamQualityChange(String(factor))} />
+            ) : <SettingsItem
               title={m.video_stream_quality_title()}
               description={m.video_stream_quality_description()}
               loading={streamQualityLoading}
@@ -286,15 +289,10 @@ export default function SettingsVideoRoute() {
                 label=""
                 disabled={streamQualityLoading}
                 value={streamQuality}
-                options={customBitrate && !streamQualityOptions.some(option => option.value === streamQuality)
-                  ? [...streamQualityOptions, { value: streamQuality, label: `${Math.round(Number(streamQuality) * 12000) / 1000} Mbps` }]
-                  : streamQualityOptions}
+                options={streamQualityOptions}
                 onChange={e => handleStreamQualityChange(e.target.value)}
               />
-            </SettingsItem>
-
-            {customBitrate && <Vim4BitrateInput factor={Number(streamQuality)} disabled={streamQualityLoading}
-              onApply={factor => handleStreamQualityChange(String(factor))} />}
+            </SettingsItem>}
 
             <SettingsItem
               title={m.video_codec_title()}
