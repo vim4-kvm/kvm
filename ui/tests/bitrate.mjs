@@ -15,6 +15,7 @@ try {
   await page.goto(`${process.env.TEST_URL || "http://127.0.0.1:5180"}/tests/bitrate-harness.html`);
   const input = page.getByRole("spinbutton");
   await input.waitFor();
+  assert.equal(await page.getByRole("button").innerText(), "Save Settings");
   assert.equal(await input.inputValue(), "17500");
   assert.equal(await page.getByRole("combobox").inputValue(), "17500");
   await page.getByRole("slider").focus();

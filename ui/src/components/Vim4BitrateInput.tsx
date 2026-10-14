@@ -52,7 +52,7 @@ export function Vim4BitrateInput({
             min={1000}
             max={60000}
             step={100}
-            className="w-full accent-blue-600 disabled:opacity-50"
+            className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 disabled:opacity-50 dark:bg-gray-700"
             value={valid ? kbps : savedKbps}
             disabled={disabled}
             aria-valuetext={`${(valid ? kbps : savedKbps) / 1000} Mbps`}
@@ -81,10 +81,9 @@ export function Vim4BitrateInput({
             type="submit"
             size="SM"
             theme="light"
+            text={m.network_save_settings()}
             disabled={disabled || !valid || kbps === savedKbps}
-          >
-            {m.network_save_settings()}
-          </Button>
+          />
         </div>
       </form>
     </SettingsItem>
