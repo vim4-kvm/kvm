@@ -21,6 +21,8 @@ import (
 
 const (
 	DefaultAPIURL = "https://api.jetkvm.com"
+	// Each VIM4 release publishes a static "releases" metadata asset.
+	VIM4UpdateURL = "https://github.com/vim4-kvm/kvm/releases/latest/download"
 )
 
 type WakeOnLanDevice struct {
@@ -130,7 +132,7 @@ func (c *Config) GetUpdateAPIURL() string {
 	if c.UpdateAPIURL == "" {
 		// JetKVM's release server publishes appliance firmware only.
 		if platform.VIM4 {
-			return ""
+			return VIM4UpdateURL + "/releases"
 		}
 		return DefaultAPIURL
 	}
