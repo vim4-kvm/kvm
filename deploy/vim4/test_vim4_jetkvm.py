@@ -1,5 +1,6 @@
 import importlib.machinery
 import importlib.util
+from contextlib import nullcontext
 import os
 from pathlib import Path
 import tempfile
@@ -57,6 +58,22 @@ class GadgetTest(unittest.TestCase):
             config = self.gadget(directory, links=('uac2.usb0',))
             helper.configure_media(None, cdrom=False)
             self.assertEqual(self.linked(config), ['uac2.usb0'])
+
+    def test_changed_media_is_rejected_before_usb_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.gadget(directory, links=('mass_storage.disk0',))
+            (helper.LUN / 'file').write_text('/external.img\n')
+            expected = {'file': '', 'ro': True, 'cdrom': False}
+            with patch.object(helper, 'locked', return_value=nullcontext()), \
+                    patch.object(helper, 'image_fd', return_value=None), \
+                    patch.object(helper, 'relink') as relink:
+                for action in ('media-mount', 'media-eject'):
+                    with self.subTest(action=action), self.assertRaisesRegex(RuntimeError, 'management panel'):
+                        helper.media(action, {'file': 'new.iso', 'cdrom': True, 'expected': expected})
+                relink.assert_not_called()
+            self.assertEqual((helper.LUN / 'file').read_text(), '/external.img\n')
+            self.assertEqual((helper.GADGET / 'UDC').read_text(), 'controller')
+            self.assertEqual(self.linked(config), ['mass_storage.disk0'])
 
     def test_failed_relink_restores_previous_functions(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(helper.time, 'sleep'):

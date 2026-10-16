@@ -479,7 +479,8 @@ export const useSettingsStore = create(
 );
 
 export interface RemoteVirtualMediaState {
-  source: "HTTP" | "Storage" | null;
+  source: "HTTP" | "Storage" | "External" | null;
+  readOnly?: boolean;
   mode: "CDROM" | "Disk" | null;
   filename: string | null;
   url: string | null;

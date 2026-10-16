@@ -95,6 +95,26 @@ or add them.
 
 ## Validation
 
+### Shared virtual media
+
+Each media status query reads the board LUN's `file`, `ro` and `cdrom` attributes.
+The media views refresh every two seconds and show the filename, CD/disk mode
+and read-only/read-write status. Only a successful mount by the running JetKVM
+process establishes ownership; pre-existing media (including images under
+`/var/lib/jetkvm/images`) appears as an external source after an app restart.
+JetKVM refuses to mount over or eject external media. Safely eject it on the
+controlled computer, then eject it in the management panel. An observed external
+eject clears ownership and stale UI state. JetKVM's own mounts remain read-only.
+The helper rechecks the expected LUN under the lock shared with the manager
+before any USB re-enumeration. Update the application and helper together.
+
+Fake-LUN Go tests and helper tests cover ownership and refusal without hardware.
+They do not verify configfs/host behavior. No board access or deployment was
+performed for this change. Replacing media with the exact same path and flags
+between observations cannot be detected from these LUN attributes alone.
+
+### Earlier hardware validation
+
 On 2026-10-13, ARM64 builder: `go test -tags vim4 ./...`, `go vet` for both
 targets, helper unit tests, UI type check and device build, package verify.
 On the board (dev build, then package 1.0.3+vim4.20261013.33 through the web

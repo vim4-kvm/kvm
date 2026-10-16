@@ -42,8 +42,14 @@ export default function MountRoute() {
 export function Dialog({ onClose }: Readonly<{ onClose: () => void }>) {
   useVideoStreamPause();
   const uploadChannel = useCapability("upload_channel");
-  const { modalView, setModalView, setRemoteVirtualMediaState, errorMessage, setErrorMessage } =
-    useMountMediaStore();
+  const {
+    modalView,
+    setModalView,
+    remoteVirtualMediaState,
+    setRemoteVirtualMediaState,
+    errorMessage,
+    setErrorMessage,
+  } = useMountMediaStore();
   const [incompleteFileName, setIncompleteFileName] = useState<string | null>(null);
   const [mountInProgress, setMountInProgress] = useState(false);
   function clearMountMediaState() {
@@ -51,18 +57,27 @@ export function Dialog({ onClose }: Readonly<{ onClose: () => void }>) {
   }
 
   const { send } = useJsonRpc();
-  async function syncRemoteVirtualMediaState() {
+  const syncRemoteVirtualMediaState = useCallback(async () => {
     return new Promise((resolve, reject) => {
       send("getVirtualMediaState", {}, (resp: JsonRpcResponse) => {
         if ("error" in resp) {
           reject(new Error(resp.error.message));
         } else {
-          setRemoteVirtualMediaState(resp as unknown as MountMediaState["remoteVirtualMediaState"]);
+          setRemoteVirtualMediaState(
+            resp.result as unknown as MountMediaState["remoteVirtualMediaState"],
+          );
           resolve(null);
         }
       });
     });
-  }
+  }, [send, setRemoteVirtualMediaState]);
+
+  useEffect(() => {
+    const refresh = () => syncRemoteVirtualMediaState().catch(() => undefined);
+    void refresh();
+    const timer = window.setInterval(refresh, 2000);
+    return () => window.clearInterval(timer);
+  }, [syncRemoteVirtualMediaState]);
 
   function triggerError(message: string) {
     setErrorMessage(message);
@@ -126,6 +141,22 @@ export function Dialog({ onClose }: Readonly<{ onClose: () => void }>) {
   }
 
   const [selectedMode, setSelectedMode] = useState<"url" | "device">("url");
+  if (remoteVirtualMediaState?.source === "External") {
+    return (
+      <GridCard>
+        <div className="space-y-4 p-10">
+          <ViewHeader title={m.mount_external_source()} description={m.mount_external_reason()} />
+          <p className="text-sm text-slate-700 dark:text-slate-300">
+            {remoteVirtualMediaState.filename} ·{" "}
+            {remoteVirtualMediaState.mode === "CDROM" ? m.mount_mode_cdrom() : m.mount_mode_disk()}{" "}
+            · {remoteVirtualMediaState.readOnly ? m.mount_read_only() : m.mount_read_write()}
+          </p>
+          <Button size="SM" theme="primary" text={m.mount_add_new_media()} disabled />
+          <Button size="SM" theme="light" text={m.close()} onClick={onClose} />
+        </div>
+      </GridCard>
+    );
+  }
   return (
     <AutoHeight>
       <div

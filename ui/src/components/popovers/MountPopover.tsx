@@ -92,6 +92,7 @@ const MountPopopover = forwardRef<HTMLDivElement, object>((_props, ref) => {
           </div>
         );
       case "Storage":
+      case "External":
         return (
           <div className="">
             <div className="mb-0 inline-block">
@@ -102,7 +103,7 @@ const MountPopopover = forwardRef<HTMLDivElement, object>((_props, ref) => {
               </Card>
             </div>
             <h3 className="text-base font-semibold text-black dark:text-white">
-              {m.mount_mounted_from_storage()}
+              {source === "External" ? m.mount_external_source() : m.mount_mounted_from_storage()}
             </h3>
             <p className="text-sm text-slate-900 dark:text-slate-100">
               {formatters.truncateMiddle(path, 50)}
@@ -124,6 +125,8 @@ const MountPopopover = forwardRef<HTMLDivElement, object>((_props, ref) => {
 
   useEffect(() => {
     syncRemoteVirtualMediaState();
+    const timer = window.setInterval(syncRemoteVirtualMediaState, 2000);
+    return () => window.clearInterval(timer);
   }, [syncRemoteVirtualMediaState, location.pathname]);
 
   const { navigateTo } = useDeviceUiNavigation();
@@ -157,6 +160,11 @@ const MountPopopover = forwardRef<HTMLDivElement, object>((_props, ref) => {
                     </Card>
                   </div>
                 </div>
+                {remoteVirtualMediaState?.source === "External" && (
+                  <p className="text-sm text-slate-700 dark:text-slate-300">
+                    {m.mount_external_reason()}
+                  </p>
+                )}
                 {remoteVirtualMediaState ? (
                   <div className="flex items-center justify-between text-xs select-none">
                     <div className="text-white select-none dark:text-slate-300">
@@ -166,6 +174,15 @@ const MountPopopover = forwardRef<HTMLDivElement, object>((_props, ref) => {
                           ? m.mount_mode_disk()
                           : m.mount_mode_cdrom()}
                       </span>
+                      {remoteVirtualMediaState.readOnly !== undefined && (
+                        <span>
+                          {" "}
+                          ·{" "}
+                          {remoteVirtualMediaState.readOnly
+                            ? m.mount_read_only()
+                            : m.mount_read_write()}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-x-2">
@@ -181,6 +198,7 @@ const MountPopopover = forwardRef<HTMLDivElement, object>((_props, ref) => {
                         size="SM"
                         theme="light"
                         text={m.mount_unmount()}
+                        disabled={remoteVirtualMediaState.source === "External"}
                         LeadingIcon={({ className }) => (
                           <svg
                             className={`${className} h-2.5 w-2.5 shrink-0`}

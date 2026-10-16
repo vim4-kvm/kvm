@@ -145,6 +145,14 @@ def media(action, req):
         fd = image_fd(req.get('file'))
     try:
         with locked('media'):
+            # The manager also takes this lock. Recheck before relink can unbind
+            # the UDC, closing the gap between the app's read and this operation.
+            expected = req.get('expected')
+            actual = {'file': (LUN / 'file').read_text().strip(),
+                      'ro': (LUN / 'ro').read_text().strip() == '1',
+                      'cdrom': (LUN / 'cdrom').read_text().strip() == '1'}
+            if expected != actual:
+                raise RuntimeError('Media changed in another interface. Safely eject it on the host, then eject it in the management panel.')
             configure_media(fd, bool(req.get('cdrom')))
     finally:
         if fd is not None:

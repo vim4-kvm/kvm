@@ -17,6 +17,7 @@ import (
 
 	"github.com/jetkvm/kvm/internal/platform"
 	"github.com/jetkvm/kvm/internal/sync"
+	"github.com/jetkvm/kvm/internal/vim4media"
 	"github.com/jetkvm/kvm/resource"
 
 	"github.com/gin-gonic/gin"
@@ -282,8 +283,9 @@ func rpcCheckMountUrl(rawURL string) (*VirtualMediaUrlInfo, error) {
 type VirtualMediaSource string
 
 const (
-	HTTP    VirtualMediaSource = "HTTP"
-	Storage VirtualMediaSource = "Storage"
+	HTTP     VirtualMediaSource = "HTTP"
+	Storage  VirtualMediaSource = "Storage"
+	External VirtualMediaSource = "External"
 )
 
 type VirtualMediaMode string
@@ -299,12 +301,20 @@ type VirtualMediaState struct {
 	Filename string             `json:"filename,omitempty"`
 	URL      string             `json:"url,omitempty"`
 	Size     int64              `json:"size"`
+	ReadOnly *bool              `json:"readOnly,omitempty"`
 }
 
 var currentVirtualMediaState *VirtualMediaState
 var virtualMediaStateMutex sync.RWMutex
 
 func rpcGetVirtualMediaState() (*VirtualMediaState, error) {
+	if platform.VIM4 {
+		virtualMediaStateMutex.Lock()
+		defer virtualMediaStateMutex.Unlock()
+		state, err := getVIM4VirtualMediaState()
+		currentVirtualMediaState = state
+		return state, err
+	}
 	virtualMediaStateMutex.RLock()
 	defer virtualMediaStateMutex.RUnlock()
 	return currentVirtualMediaState, nil
@@ -351,6 +361,9 @@ func rpcUnmountImage() error {
 var httpRangeReader *httpreadat.RangeReader
 
 func getInitialVirtualMediaState() (*VirtualMediaState, error) {
+	if platform.VIM4 {
+		return getVIM4VirtualMediaState()
+	}
 	cdromEnabled, err := getMassStorageCDROMEnabled()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mass storage cdrom enabled: %w", err)
@@ -475,6 +488,16 @@ func rpcMountWithHTTP(url string, mode VirtualMediaMode) error {
 func prepareStorageMount(filename string, mode VirtualMediaMode) error {
 	virtualMediaStateMutex.Lock()
 	defer virtualMediaStateMutex.Unlock()
+	if platform.VIM4 {
+		state, err := getVIM4VirtualMediaState()
+		if err != nil {
+			return err
+		}
+		currentVirtualMediaState = state
+		if state != nil && state.Source == External {
+			return vim4media.ErrForeign
+		}
+	}
 	if currentVirtualMediaState != nil {
 		return fmt.Errorf("another virtual media is already mounted")
 	}
