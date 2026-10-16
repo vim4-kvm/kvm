@@ -41,6 +41,10 @@ func TestVIM4VersionOrderUsesBuildNumbers(t *testing.T) {
 		{"1.0.3+vim4.20261013.30", "1.0.3+vim4.20261013.30", false},
 		{"1.0.2+vim4.20261020.1", "1.0.3+vim4.20261013.30", false},
 		{"1.0.3+vim4.20261013.30", "1.0.3", true},
+		{"2.5.1+vim4.20261016.1020", "2.5.1+vim4.20261016.1020.dev.1.g49c45f2", false},
+		{"2.5.1+vim4.20261016.1022", "2.5.1+vim4.20261016.1020.dev.9.g49c45f2.dirty", true},
+		{"2.5.1+vim4.20261017.1", "2.5.1+vim4.20261016.1020.dev.9.g49c45f2", true},
+		{"2.5.1+vim4.20261016.1020.dev.10.gabcdef0", "2.5.1+vim4.20261016.1020.dev.9.g49c45f2", true},
 	}
 	for _, c := range cases {
 		if got := vim4VersionNewer(semver.MustParse(c.remote), semver.MustParse(c.local)); got != c.newer {
