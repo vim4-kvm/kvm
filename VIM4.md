@@ -97,6 +97,15 @@ or add them.
 
 ### Shared virtual media
 
+The storage list groups images from the other KVM applications and shared data
+disks by source. These entries cannot be deleted here and always mount read-only;
+foreign ISO files use CD-ROM mode and data disks use Disk mode. A successful
+catalog mount belongs to JetKVM and can be ejected here. Media mounted elsewhere
+retains the external-media protection below. The root helper imports the board
+module from `/usr/lib/vim4-kvm/python/vim4media.py`, takes both global media locks,
+and refuses data disks while the manager edits them. Install the matching board
+module before using this helper.
+
 Each media status query reads the board LUN's `file`, `ro` and `cdrom` attributes.
 The media views refresh every two seconds and show the filename, CD/disk mode
 and read-only/read-write status. Only a successful mount by the running JetKVM

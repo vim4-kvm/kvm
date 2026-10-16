@@ -2,11 +2,17 @@ import importlib.machinery
 import importlib.util
 from contextlib import nullcontext
 import os
+import sys
+import fcntl
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
+board_spec = importlib.util.spec_from_file_location('vim4media', Path(__file__).resolve().parents[3] / 'board/vim4media.py')
+vim4media = importlib.util.module_from_spec(board_spec)
+sys.modules['vim4media'] = vim4media
+board_spec.loader.exec_module(vim4media)
 loader = importlib.machinery.SourceFileLoader('helper', str(Path(__file__).with_name('vim4-jetkvm')))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 helper = importlib.util.module_from_spec(spec)
@@ -64,7 +70,7 @@ class GadgetTest(unittest.TestCase):
             config = self.gadget(directory, links=('mass_storage.disk0',))
             (helper.LUN / 'file').write_text('/external.img\n')
             expected = {'file': '', 'ro': True, 'cdrom': False}
-            with patch.object(helper, 'locked', return_value=nullcontext()), \
+            with patch.object(helper.vim4media, 'media_locks', return_value=nullcontext()), \
                     patch.object(helper, 'image_fd', return_value=None), \
                     patch.object(helper, 'relink') as relink:
                 for action in ('media-mount', 'media-eject'):
@@ -88,6 +94,8 @@ class GadgetTest(unittest.TestCase):
     def test_images_must_be_regular_files_inside_the_image_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             helper.IMAGES = Path(directory)
+            self.addCleanup(patch.stopall)
+            patch.dict(helper.vim4media.IMAGE_ROOTS, jetkvm=helper.IMAGES).start()
             (helper.IMAGES / 'short.img').write_bytes(b'x')
             (helper.IMAGES / 'link.img').symlink_to('/etc/passwd')
             os.mkfifo(helper.IMAGES / 'pipe.img')
@@ -96,6 +104,79 @@ class GadgetTest(unittest.TestCase):
                 with self.subTest(name=name), self.assertRaises((OSError, ValueError)):
                     helper.image_fd(name)
             os.close(helper.image_fd('ok.iso'))
+
+
+@unittest.skipUnless(os.geteuid() == 0, 'shared lock files require root')
+class SharedMediaTest(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        roots = {source: root / source for source in ('shared', 'jetkvm', 'onekvm', 'pikvm')}
+        for directory in roots.values():
+            directory.mkdir()
+            (directory / 'boot.iso').write_bytes(b'x' * 512)
+        data = root / 'data'
+        data.mkdir()
+        (data / 'work.img').write_bytes(b'x' * 512)
+        lun = root / 'lun'
+        lun.mkdir()
+        for name, value in {'file': '', 'ro': '1', 'cdrom': '0'}.items():
+            (lun / name).write_text(value)
+        self.addCleanup(patch.stopall)
+        patch.multiple(helper.vim4media, IMAGE_ROOTS=roots, DATA_DIR=data, LUN_FILE=lun / 'file',
+                       LOCKS=(root / 'lock1', root / 'lock2')).start()
+        patch.object(helper, 'LUN', lun).start()
+
+    def mount(self, name, cdrom=False):
+        return helper.media('media-mount', {'file': name, 'cdrom': cdrom,
+                            'expected': {'file': '', 'ro': True, 'cdrom': False}})
+
+    def test_catalog_and_mount_enforce_read_only_and_effective_mode(self):
+        ids = {entry['id'] for entry in helper.OPERATIONS['catalog']({})}
+        self.assertTrue({'shared/boot.iso', 'pikvm/boot.iso', 'data/work.img'} <= ids)
+        def attach(fd, cdrom):
+            self.assertEqual(fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_ACCMODE, os.O_RDONLY)
+            for lock in helper.vim4media.LOCKS:
+                with lock.open('r+') as contender:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            (helper.LUN / 'file').write_text(os.readlink(f'/proc/self/fd/{fd}'))
+        with patch.object(helper, 'configure_media', side_effect=attach):
+            mounted = self.mount('shared/boot.iso')
+            self.assertTrue(mounted['cdrom'])
+            self.assertTrue(mounted['ro'])
+            self.assertEqual(mounted['file'], str(helper.vim4media.IMAGE_ROOTS['shared'] / 'boot.iso'))
+            (helper.LUN / 'file').write_text('')
+            mounted = self.mount('data/work.img', cdrom=True)
+            self.assertFalse(mounted['cdrom'])
+            self.assertTrue(mounted['ro'])
+
+    def test_edit_lock_refuses_attach_without_usb_changes(self):
+        with helper.vim4media.edit_disk('work.img'), patch.object(helper, 'configure_media') as attach:
+            with self.assertRaisesRegex(ValueError, '编辑'):
+                self.mount('data/work.img')
+            attach.assert_not_called()
+
+    def test_rollback_data_disk_retains_validation_and_edit_lock(self):
+        disk = helper.vim4media.DATA_DIR / 'work.img'
+        (helper.LUN / 'file').write_text(str(disk))
+        def relink(links, prepare, restore):
+            prepare()
+            restore()
+            raise OSError('relink failed')
+        write_text = Path.write_text
+        def write(path, value, *args, **kwargs):
+            if path == helper.LUN / 'file' and value.startswith('/proc/self/fd/'):
+                fd = int(value.split('/')[-1])
+                self.assertEqual(os.fstat(fd).st_ino, disk.stat().st_ino)
+                with disk.open('r+') as contender:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return write_text(path, value, *args, **kwargs)
+        with patch.object(helper, 'relink', side_effect=relink), patch.object(Path, 'write_text', write):
+            with self.assertRaisesRegex(OSError, 'relink failed'):
+                helper.media('media-eject', {'expected': {'file': str(disk), 'ro': True, 'cdrom': False}})
 
 
 class EdidTest(unittest.TestCase):

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { mediaSourcesVim4 } from "@/utils/mediaSourcesVim4";
 import { LuLink, LuRadioReceiver, LuCheck, LuUpload } from "react-icons/lu";
 import { PlusCircleIcon, ExclamationTriangleIcon } from "@heroicons/react/20/solid";
 import { TrashIcon } from "@heroicons/react/16/solid";
@@ -533,6 +541,8 @@ export interface StorageFile {
   name: string;
   size: string;
   createdAt: Date;
+  source?: string;
+  readOnly?: boolean;
 }
 
 // A device with removable storage (the JetKVM Mini's TF card) keeps images on
@@ -694,8 +704,17 @@ function DeviceFileView({
         name: file.filename,
         size: formatters.bytes(file.size),
         createdAt: new Date(file?.createdAt),
+        source: file.source,
+        readOnly: file.readOnly,
       }));
 
+      if (formattedFiles.some((file) => file.source)) {
+        formattedFiles.sort(
+          (a, b) =>
+            (a.source || "").localeCompare(b.source || "") ||
+            a.name.localeCompare(b.name),
+        );
+      }
       setOnStorageFiles(formattedFiles);
     });
 
@@ -738,6 +757,8 @@ function DeviceFileView({
       filename: string;
       size: number;
       createdAt: string;
+      source?: string;
+      readOnly?: boolean;
     }[];
   }
 
@@ -760,6 +781,7 @@ function DeviceFileView({
   }, [removableStorage, send, storageStateJson, syncStorage]);
 
   function handleDeleteFile(file: StorageFile) {
+    if (file.source) return;
     console.log("Deleting file:", file);
     send("deleteStorageFile", { filename: file.name }, (resp: JsonRpcResponse) => {
       if ("error" in resp) {
@@ -773,9 +795,10 @@ function DeviceFileView({
 
   function handleOnSelectFile(file: StorageFile) {
     setSelected(file.name);
-    if (file.name.endsWith(".iso")) {
+    const name = file.source ? file.name.toLowerCase() : file.name;
+    if (name.endsWith(".iso")) {
       setUsbMode("CDROM");
-    } else if (file.name.endsWith(".img")) {
+    } else if (name.endsWith(".img")) {
       setUsbMode("Disk");
     }
   }
@@ -784,6 +807,11 @@ function DeviceFileView({
   const indexOfFirstFile = indexOfLastFile - filesPerPage;
   const currentFiles = onStorageFiles.slice(indexOfFirstFile, indexOfLastFile);
   const totalPages = Math.ceil(onStorageFiles.length / filesPerPage);
+  const selectedFile = onStorageFiles.find((file) => file.name === selected);
+  const fixedMediaMode =
+    !!selectedFile?.source &&
+    (selectedFile.source === "data" ||
+      selectedFile.name.toLowerCase().endsWith(".iso"));
 
   const handlePreviousPage = () => {
     setCurrentPage(prev => Math.max(prev - 1, 1));
@@ -850,23 +878,41 @@ function DeviceFileView({
           ) : (
             <div className="w-full divide-y divide-slate-800/20 dark:divide-slate-300/20">
               {currentFiles.map((file, index) => (
-                <PreUploadedImageItem
-                  key={index}
-                  name={file.name}
-                  size={file.size}
-                  uploadedAt={file.createdAt}
-                  isIncomplete={file.name.endsWith(".incomplete")}
-                  isSelected={selected === file.name}
-                  onDelete={() => {
-                    const selectedFile = onStorageFiles.find(f => f.name === file.name);
-                    if (!selectedFile) return;
-                    if (window.confirm(m.mount_confirm_delete({ name: selectedFile.name }))) {
-                      handleDeleteFile(selectedFile);
-                    }
-                  }}
-                  onSelect={() => handleOnSelectFile(file)}
-                  onContinueUpload={() => onNewImageClick(file.name)}
-                />
+                <Fragment key={file.name}>
+                  {onStorageFiles.some((f) => f.source) &&
+                    (index === 0 ||
+                      currentFiles[index - 1].source !== file.source) && (
+                      <div className="px-3 py-2 text-sm font-semibold">
+                        {mediaSourcesVim4[file.source || "jetkvm"] ||
+                          file.source}
+                      </div>
+                    )}
+                  <PreUploadedImageItem
+                    key={index}
+                    name={file.name}
+                    size={file.size}
+                    uploadedAt={file.createdAt}
+                    isIncomplete={file.name.endsWith(".incomplete")}
+                    isSelected={selected === file.name}
+                    shared={!!file.source}
+                    readOnly={file.readOnly}
+                    onDelete={() => {
+                      const selectedFile = onStorageFiles.find(
+                        (f) => f.name === file.name,
+                      );
+                      if (!selectedFile) return;
+                      if (
+                        window.confirm(
+                          m.mount_confirm_delete({ name: selectedFile.name }),
+                        )
+                      ) {
+                        handleDeleteFile(selectedFile);
+                      }
+                    }}
+                    onSelect={() => handleOnSelectFile(file)}
+                    onContinueUpload={() => onNewImageClick(file.name)}
+                  />
+                </Fragment>
               ))}
 
               {onStorageFiles.length > filesPerPage && (
@@ -909,7 +955,7 @@ function DeviceFileView({
             animationDelay: "0.15s",
           }}
         >
-          <Fieldset disabled={selected === null}>
+          <Fieldset disabled={selected === null || fixedMediaMode}>
             <UsbModeSelector usbMode={usbMode} setUsbMode={setUsbMode} />
           </Fieldset>
           <div className="flex items-center gap-x-2">
@@ -1518,6 +1564,8 @@ function PreUploadedImageItem({
   onSelect,
   onDelete,
   onContinueUpload,
+  shared = false,
+  readOnly = false,
 }: {
   name: string;
   size: string;
@@ -1527,6 +1575,8 @@ function PreUploadedImageItem({
   onSelect: () => void;
   onDelete: () => void;
   onContinueUpload: () => void;
+  shared?: boolean;
+  readOnly?: boolean;
 }) {
   const [isHovering, setIsHovering] = useState(false);
   return (
@@ -1555,10 +1605,13 @@ function PreUploadedImageItem({
           </div>
           <div className="flex items-center text-sm">
             <div className="flex items-center gap-x-1 text-slate-600 dark:text-slate-400">
-              {formatters.date(new Date(uploadedAt), { month: "short" })}
+              {shared
+                ? "只读 · 在来源应用中管理"
+                : formatters.date(new Date(uploadedAt), { month: "short" })}
             </div>
             <div className="mx-1 h-[10px] w-px bg-slate-300 text-slate-300 dark:bg-slate-600"></div>
             <div className="text-gray-600 dark:text-slate-400">{size}</div>
+            {readOnly && !shared && <span className="ml-2">只读</span>}
           </div>
         </div>
       </div>
@@ -1568,17 +1621,19 @@ function PreUploadedImageItem({
             "w-auto opacity-100": isHovering,
           })}
         >
-          <Button
-            size="XS"
-            theme="light"
-            LeadingIcon={TrashIcon}
-            text={m.delete()}
-            onClick={e => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="text-red-500 dark:text-red-400"
-          />
+          {!shared && (
+            <Button
+              size="XS"
+              theme="light"
+              LeadingIcon={TrashIcon}
+              text={m.delete()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="text-red-500 dark:text-red-400"
+            />
+          )}
         </div>
         {!isIncomplete ? (
           <input

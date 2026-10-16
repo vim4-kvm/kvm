@@ -19,6 +19,9 @@ import tempfile
 import time
 import uuid
 
+sys.path.insert(0, '/usr/lib/vim4-kvm/python')
+import vim4media
+
 STATE = Path('/var/lib/jetkvm')
 IMAGES = STATE / 'images'
 GADGET = Path('/sys/kernel/config/usb_gadget/kvm')
@@ -64,19 +67,9 @@ def locked(name):
 # Virtual media
 
 def image_fd(name):
-    if not isinstance(name, str) or '/' in name or name in ('', '.', '..') or '\0' in name:
+    if not isinstance(name, str) or name in ('', '.', '..') or '\0' in name:
         raise ValueError('Image must be a file in the image directory')
-    directory = os.open(IMAGES, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
-        # JetKVM exposes every image read-only, including the Disk mode.
-        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
-    finally:
-        os.close(directory)
-    info = os.fstat(fd)
-    if not stat.S_ISREG(info.st_mode) or info.st_size < 512:
-        os.close(fd)
-        raise ValueError('Image must be a regular file of at least 512 bytes')
-    return fd
+    return vim4media.open_image(name if '/' in name else 'jetkvm/' + name, readonly=True)
 
 
 def desired_links(mounted, microphone):
@@ -131,8 +124,21 @@ def configure_media(fd, cdrom):
 
     def restore():
         (LUN / 'file').write_text('\n')
-        for key in ('cdrom', 'ro', 'file'):
+        for key in ('cdrom', 'ro'):
             (LUN / key).write_text(old[key] or '\n')
+        if old['file']:
+            path = Path(old['file'])
+            for source, root in {**vim4media.IMAGE_ROOTS, 'data': vim4media.DATA_DIR}.items():
+                if path.is_relative_to(root):
+                    identifier = source + '/' + str(path.relative_to(root))
+                    break
+            else:
+                raise ValueError('Previous media is outside the catalog')
+            restore_fd = vim4media.open_image(identifier, readonly=old['ro'] == '1')
+            try:
+                (LUN / 'file').write_text(f'/proc/self/fd/{restore_fd}')
+            finally:
+                os.close(restore_fd)
 
     relink(desired_links(fd is not None, microphone), prepare, restore)
 
@@ -142,9 +148,8 @@ def media(action, req):
     if action == 'media-mount':
         if type(req.get('cdrom')) is not bool:
             raise ValueError('cdrom must be boolean')
-        fd = image_fd(req.get('file'))
     try:
-        with locked('media'):
+        with vim4media.media_locks(wait=True):
             # The manager also takes this lock. Recheck before relink can unbind
             # the UDC, closing the gap between the app's read and this operation.
             expected = req.get('expected')
@@ -153,18 +158,26 @@ def media(action, req):
                       'cdrom': (LUN / 'cdrom').read_text().strip() == '1'}
             if expected != actual:
                 raise RuntimeError('Media changed in another interface. Safely eject it on the host, then eject it in the management panel.')
-            configure_media(fd, bool(req.get('cdrom')))
+            cdrom = bool(req.get('cdrom'))
+            if action == 'media-mount':
+                name = req.get('file')
+                fd = image_fd(name)
+                if '/' in name:
+                    cdrom = name.lower().endswith('.iso') or cdrom
+                    if name.startswith('data/'):
+                        cdrom = False
+            configure_media(fd, cdrom)
+            return {'file': (LUN / 'file').read_text().strip(), 'ro': True, 'cdrom': cdrom}
     finally:
         if fd is not None:
             os.close(fd)
-    return {}
 
 
 def usb_emulation(req):
     enabled = req.get('enabled')
     if type(enabled) is not bool:
         raise ValueError('enabled must be boolean')
-    with locked('media'):
+    with vim4media.media_locks(wait=True):
         udc = GADGET / 'UDC'
         if bool(udc.read_text().strip()) == enabled:
             return {}
@@ -608,6 +621,7 @@ def update_install(req):
 
 
 OPERATIONS = {
+    'catalog': lambda req: vim4media.catalog(),
     'media-mount': lambda req: media('media-mount', req),
     'media-eject': lambda req: media('media-eject', req),
     'usb-emulation': usb_emulation,

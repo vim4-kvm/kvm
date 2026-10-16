@@ -23,7 +23,7 @@ type Snapshot struct {
 // making any USB changes. Only successful operations establish ownership.
 type Controller struct {
 	LUN   string
-	Apply func(file string, cdrom bool, expected Snapshot) error
+	Apply func(file string, cdrom bool, expected Snapshot) (Snapshot, error)
 	mu    sync.Mutex
 	owned Snapshot
 }
@@ -79,12 +79,14 @@ func (c *Controller) Change(file string, cdrom bool) error {
 	if file == "" && media.File == "" {
 		return nil
 	}
-	if err := c.Apply(file, cdrom, media); err != nil {
+	mounted, err := c.Apply(file, cdrom, media)
+	if err != nil {
 		return err
 	}
 	c.owned = Snapshot{}
 	if file != "" {
-		c.owned = Snapshot{File: file, ReadOnly: true, CDROM: cdrom}
+		// Catalog identifiers resolve to backing paths and may force CD-ROM mode.
+		c.owned = mounted
 	}
 	return nil
 }

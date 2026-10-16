@@ -29,17 +29,17 @@ func fakeController(t *testing.T) (*Controller, *int) {
 	writeLUN(t, dir, Snapshot{})
 	calls := 0
 	c := &Controller{LUN: dir}
-	c.Apply = func(file string, cdrom bool, expected Snapshot) error {
+	c.Apply = func(file string, cdrom bool, expected Snapshot) (Snapshot, error) {
 		calls++
 		actual, err := c.read()
 		if err != nil {
-			return err
+			return Snapshot{}, err
 		}
 		if actual != expected {
-			return errors.New("media changed")
+			return Snapshot{}, errors.New("media changed")
 		}
 		writeLUN(t, dir, Snapshot{File: file, CDROM: cdrom, ReadOnly: true})
-		return nil
+		return Snapshot{File: file, CDROM: cdrom, ReadOnly: true}, nil
 	}
 	return c, &calls
 }
@@ -112,7 +112,7 @@ func TestOwnMountEjectAndExternalChanges(t *testing.T) {
 
 func TestFailedMountAndUnreadableLUNDoNotGrantOwnership(t *testing.T) {
 	c, calls := fakeController(t)
-	c.Apply = func(string, bool, Snapshot) error { return errors.New("helper failed") }
+	c.Apply = func(string, bool, Snapshot) (Snapshot, error) { return Snapshot{}, errors.New("helper failed") }
 	if err := c.Change("/own.iso", true); err == nil {
 		t.Fatal("expected helper failure")
 	}
@@ -125,5 +125,31 @@ func TestFailedMountAndUnreadableLUNDoNotGrantOwnership(t *testing.T) {
 	}
 	if err := c.Change("/new.iso", true); err == nil || *calls != 0 {
 		t.Fatal("unreadable LUN allowed mutation")
+	}
+}
+
+func TestCatalogMountOwnsResolvedPathAndEffectiveMode(t *testing.T) {
+	c, _ := fakeController(t)
+	mounted := Snapshot{File: "/var/lib/vim4-kvm/images/boot.iso", CDROM: true, ReadOnly: true}
+	c.Apply = func(file string, cdrom bool, expected Snapshot) (Snapshot, error) {
+		if file == "" {
+			mounted = Snapshot{}
+		}
+		writeLUN(t, c.LUN, mounted)
+		return mounted, nil
+	}
+	if err := c.Change("shared/boot.iso", false); err != nil {
+		t.Fatal(err)
+	}
+	state, owned, err := c.State()
+	if err != nil || !owned || state != mounted {
+		t.Fatalf("state=%+v owned=%v err=%v", state, owned, err)
+	}
+	if err := c.Change("", false); err != nil {
+		t.Fatal(err)
+	}
+	state, owned, err = c.State()
+	if err != nil || owned || state.File != "" {
+		t.Fatalf("eject: %+v %v %v", state, owned, err)
 	}
 }

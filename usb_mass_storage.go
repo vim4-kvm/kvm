@@ -502,6 +502,9 @@ func prepareStorageMount(filename string, mode VirtualMediaMode) error {
 		return fmt.Errorf("another virtual media is already mounted")
 	}
 
+	if platform.VIM4 && strings.Contains(filename, "/") {
+		return mountVIM4CatalogImage(filename, mode)
+	}
 	fullPath := filepath.Join(imagesFolder, filename)
 	fileInfo, err := os.Stat(fullPath)
 	if err != nil {
@@ -526,9 +529,12 @@ func prepareStorageMount(filename string, mode VirtualMediaMode) error {
 }
 
 func rpcMountWithStorage(filename string, mode VirtualMediaMode) error {
-	filename, err := sanitizeFilename(filename)
-	if err != nil {
-		return err
+	if !platform.VIM4 || !strings.Contains(filename, "/") {
+		var err error
+		filename, err = sanitizeFilename(filename)
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := prepareStorageMount(filename, mode); err != nil {
@@ -567,6 +573,8 @@ type StorageFile struct {
 	Filename  string    `json:"filename"`
 	Size      int64     `json:"size"`
 	CreatedAt time.Time `json:"createdAt"`
+	Source    string    `json:"source,omitempty"`
+	ReadOnly  bool      `json:"readOnly,omitempty"`
 }
 
 type StorageFiles struct {
@@ -597,6 +605,13 @@ func rpcListStorageFiles() (*StorageFiles, error) {
 		})
 	}
 
+	if platform.VIM4 {
+		foreign, err := vim4CatalogFiles()
+		if err != nil {
+			return nil, err
+		}
+		storageFiles = append(storageFiles, foreign...)
+	}
 	return &StorageFiles{Files: storageFiles}, nil
 }
 
@@ -613,6 +628,9 @@ func sanitizeFilename(filename string) (string, error) {
 }
 
 func rpcDeleteStorageFile(filename string) error {
+	if platform.VIM4 && strings.Contains(filename, "/") {
+		return fmt.Errorf("shared media must be managed in its source application")
+	}
 	sanitizedFilename, err := sanitizeFilename(filename)
 	if err != nil {
 		return err
