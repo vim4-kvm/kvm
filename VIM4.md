@@ -81,7 +81,7 @@ or add them.
 | Audio | HDMI receiver `hw:AMLAUGESOUND,0` (48 kHz stereo) through JetKVM's G.722/PCMU encoder. The board HDMI service routes TDM-B to hdmirx |
 | Keyboard, mouse, macros, paste, jiggler | Existing HID endpoints; horizontal scrolling is unavailable because the board's descriptors have no AC Pan |
 | Virtual media | Upload (HTTP and data channel), image list, CD-ROM and Disk mounting, eject. Mounting from a URL is hidden (`url_media`): the kernel has no NBD driver |
-| EDID | Defaults to the vendor VIM4 3840×2160 60 Hz table on first use and UI reset. The VIM4 1080p table and JetKVM presets remain selectable. Saved selections and custom EDIDs are preserved. The receiver cannot report its table; the configured one is returned |
+| EDID | Defaults to the vendor VIM4 3840×2160 60 Hz table on first use and UI reset. The RTK UHD HDR 4K60 table (shared with the board-wide `RTK-CONTROL` preset), the VIM4 1080p table and JetKVM presets remain selectable. Saved selections and custom EDIDs are preserved. The receiver cannot report its table; the configured one is returned |
 | Hide host display when idle | Hot-plug low through the hdmirx debug interface; restored when a viewer connects and when the application stops |
 | Network | eth0 IPv4 DHCP/static and IPv6 modes through NetworkManager, DHCP lease details, renew, hostname, mDNS, HTTP proxy (application setting). A new static address redirects the browser. Domain, LLDP and JetKVM's time sources are not offered; chrony owns the clock |
 | Wi-Fi | NetworkManager profiles; Ethernet stays the managed interface, so static IPv4 settings never belong to a Wi-Fi network |
