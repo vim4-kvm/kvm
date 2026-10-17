@@ -100,7 +100,7 @@ func mainVIM4() {
 func vim4Capabilities() []string {
 	capabilities := []string{
 		"shell", "custom_edid", "upload_channel", "video_during_update", "custom_bitrate",
-		"http_proxy", "mdns", "ipv6", "tls", "local_loopback", "log_level", "tailscale", "update_source",
+		"http_proxy", "mdns", "ipv6", "tls", "local_loopback", "log_level", "update_source",
 	}
 	if vim4WifiAvailable() {
 		capabilities = append(capabilities, "wifi")
@@ -122,9 +122,11 @@ func vim4HTTP(c *gin.Context) {
 // vim4RPCUnsupported reports operations for hardware this board does not
 // have (built-in display, extension port, DC power, serial console), the
 // board-owned USB gadget identity, the JetKVM Cloud and appliance DHCP clients.
+// The management panel owns Tailscale for the whole board.
 func vim4RPCUnsupported(method string) bool {
 	switch method {
-	case "deregisterDevice", "setCloudUrl",
+	case "getTailscaleStatus", "getTailscaleControlURL", "setTailscaleControlURL",
+		"deregisterDevice", "setCloudUrl",
 		"setDisplayRotation", "getDisplayRotation", "setBacklightSettings", "getBacklightSettings",
 		"getDCPowerState", "setDCPowerState", "setDCRestoreState",
 		"getActiveExtension", "setActiveExtension", "getATXState", "setATXPowerAction",

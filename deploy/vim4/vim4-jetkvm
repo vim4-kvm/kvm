@@ -549,35 +549,6 @@ def reboot(req):
     return {}
 
 
-TAILSCALE_DEFAULT_CONTROL = 'https://controlplane.tailscale.com'
-
-
-def tailscale_login(req):
-    """Start a login to the given control server unless it is already in use.
-
-    Ubuntu's tailscale has no "set --login-server"; the server is chosen at
-    login. The login waits for browser authorization, so it runs detached and
-    tailscaled publishes the URL in its status.
-    """
-    if not shutil.which('tailscale'):
-        raise RuntimeError('tailscale is not installed')
-    url = req.get('url')
-    if not isinstance(url, str) or not re.fullmatch(r'https?://[A-Za-z0-9.-]+(?::[0-9]{1,5})?', url):
-        raise ValueError('Invalid control URL')
-    try:
-        prefs = json.loads(run('tailscale', 'debug', 'prefs', timeout=15))
-        status = json.loads(run('tailscale', 'status', '--json', check=False, timeout=15) or '{}')
-    except json.JSONDecodeError:
-        raise RuntimeError('tailscale returned unreadable state')
-    current = prefs.get('ControlURL') or TAILSCALE_DEFAULT_CONTROL
-    if current == url and status.get('BackendState') == 'Running':
-        return {}
-    subprocess.Popen(['tailscale', 'login', '--login-server=' + url, '--accept-dns=false', '--timeout=10m'],
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=True)
-    return {}
-
-
 def update_install(req):
     """Install a downloaded application package and verify it.
 
@@ -638,7 +609,6 @@ OPERATIONS = {
     'wifi-connect': wifi_connect,
     'wifi-remove': wifi_remove,
     'reboot': reboot,
-    'tailscale-login': tailscale_login,
     'update-install': update_install,
 }
 

@@ -273,28 +273,6 @@ class WifiTest(unittest.TestCase):
             command.assert_not_called()
 
 
-class TailscaleTest(unittest.TestCase):
-    def test_login_server_is_validated_before_commands(self):
-        with patch.object(helper.shutil, 'which', return_value='/usr/bin/tailscale'), \
-                patch.object(helper, 'run') as command, patch.object(helper.subprocess, 'Popen') as popen:
-            for url in ('', 'ftp://x', 'https://host/path', 'https://host;reboot', None):
-                with self.subTest(url=url), self.assertRaises(ValueError):
-                    helper.tailscale_login({'url': url})
-            command.assert_not_called()
-            popen.assert_not_called()
-
-    def test_running_node_on_the_same_server_is_left_alone(self):
-        state = {('tailscale', 'debug', 'prefs'): '{"ControlURL": ""}',
-                 ('tailscale', 'status', '--json'): '{"BackendState": "Running"}'}
-        with patch.object(helper.shutil, 'which', return_value='/usr/bin/tailscale'), \
-                patch.object(helper, 'run', side_effect=lambda *a, **k: state[a]), \
-                patch.object(helper.subprocess, 'Popen') as popen:
-            helper.tailscale_login({'url': helper.TAILSCALE_DEFAULT_CONTROL})
-            popen.assert_not_called()
-            helper.tailscale_login({'url': 'https://headscale.example.com'})
-            self.assertIn('--login-server=https://headscale.example.com', popen.call_args.args[0])
-
-
 class UpdateTest(unittest.TestCase):
     def test_packages_outside_the_state_directory_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -307,7 +285,7 @@ class UpdateTest(unittest.TestCase):
 
 class DispatchTest(unittest.TestCase):
     def test_unknown_operations_are_rejected(self):
-        for args in ([], ['shell'], ['reboot', 'now']):
+        for args in ([], ['shell'], ['tailscale-login'], ['reboot', 'now']):
             with self.subTest(args=args), self.assertRaises(ValueError):
                 helper.main(args)
 

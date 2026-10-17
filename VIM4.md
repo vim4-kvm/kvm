@@ -51,7 +51,6 @@ helper validates every request itself; sudoers allows only this program.
 | network-get, network-set, dhcp-renew | Reads and changes the active eth0 NetworkManager profile; a failed reapply restores the previous profile |
 | hostname-set, mdns-set | hostnamectl; Avahi enable/disable and IPv4/IPv6 families |
 | wifi-get, wifi-scan, wifi-save, wifi-connect, wifi-remove | NetworkManager Wi-Fi profiles; secrets go to a root-only keyfile |
-| tailscale-login | Starts `tailscale login --login-server=…`; Ubuntu's tailscale has no `set --login-server` |
 | reboot | Delayed `systemctl reboot` after sync |
 | update-install | Installs a downloaded vim4-jetkvm package after an APT dependency simulation, then `dpkg --verify` |
 
@@ -88,7 +87,7 @@ or add them.
 | Access | Local password, HTTPS (self-signed or custom), loopback-only. JetKVM Cloud is not offered |
 | Advanced | Developer mode, web terminal (khadas shell), SSH key in `~khadas/.ssh/authorized_keys2`, USB emulation, log level, diagnostics (journal), factory reset |
 | Updates | The administrator sets an update server; `GET {server}/releases` returns JetKVM's metadata format (`appVersion`, `appUrl`, `appHash`; no system component). Packages are installed without a JetKVM signature after their hash matches, then the board reboots. Version order includes the build number |
-| Tailscale | Status, login URL and control server when Tailscale is installed |
+| Tailscale | Managed for the whole board by vim4-manager, including installation and login; the application card is hidden and its RPCs are rejected. Existing package and login state are preserved |
 | MQTT, Wake-on-LAN, Prometheus | Unchanged application features |
 | Factory reset | Removes the JetKVM configuration, images, TLS store and the managed SSH key file, then reboots. Ubuntu network, hostname and accounts are kept |
 | Not available | Built-in display, extension port (ATX, DC power, serial console), USB identity and device selection, CDC-ACM console, JetKVM Cloud, HDMI sleep. Their RPCs are rejected |
@@ -140,7 +139,8 @@ updater), with a Mac as HDMI source and USB host:
 - Network settings round trip with mDNS IPv4-only and back, Avahi resolution,
   Wi-Fi scan, save/connect failure/remove with a test network.
 - SSH key file, self-signed HTTPS on 443, terminal, diagnostics, local password,
-  Tailscale login URL and control server, jiggler.
+  jiggler. Tailscale login URL and control server were checked in that earlier
+  build; Tailscale is now managed only through vim4-manager.
 - Web update downloaded, verified, installed and rebooted; after boot the
   service, gadget and 4K video, audio and pointer worked. Factory reset rebooted
   and kept `~khadas/.ssh/authorized_keys`.

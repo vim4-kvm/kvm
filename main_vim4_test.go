@@ -10,16 +10,17 @@ import (
 	"github.com/jetkvm/kvm/internal/native"
 )
 
-func TestVIM4RejectsOperationsWithoutHardware(t *testing.T) {
+func TestVIM4RejectsUnsupportedOperations(t *testing.T) {
 	for _, method := range []string{"setDisplayRotation", "setBacklightSettings", "setDCPowerState", "setActiveExtension",
-		"setATXPowerAction", "setSerialSettings", "setUsbDevices", "setUsbConfig", "setCloudUrl", "deregisterDevice"} {
+		"setATXPowerAction", "setSerialSettings", "setUsbDevices", "setUsbConfig", "setCloudUrl", "deregisterDevice",
+		"getTailscaleStatus", "getTailscaleControlURL", "setTailscaleControlURL"} {
 		if !vim4RPCUnsupported(method) {
 			t.Errorf("operation without VIM4 support exposed: %s", method)
 		}
 	}
 	for _, method := range []string{"keyboardReport", "absMouseReport", "getVideoState", "setNetworkSettings", "renewDHCPLease",
 		"mountWithStorage", "setEDID", "setUsbEmulationState", "tryUpdate", "factoryReset", "reboot", "setSSHKeyState",
-		"getTailscaleStatus", "setAudioConfig", "setMqttSettings", "getWifiSettings"} {
+		"setAudioConfig", "setMqttSettings", "getWifiSettings"} {
 		if vim4RPCUnsupported(method) {
 			t.Errorf("implemented operation rejected: %s", method)
 		}
