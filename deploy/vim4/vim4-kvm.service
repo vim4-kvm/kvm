@@ -3,7 +3,7 @@ Description=VIM4 JetKVM web application
 Requires=vim4-kvm-hdmi.service vim4-kvm-gadget.service vim4-kvm-pd.service
 After=network-online.target vim4-kvm-hdmi.service vim4-kvm-gadget.service vim4-kvm-pd.service
 Wants=network-online.target
-# Both applications use HDMI capture, the encoder, HID endpoints and port 8080.
+# Applications share HDMI capture, the encoder, HID endpoints and backend port 8081.
 Conflicts=nanokvm.service
 
 [Service]
@@ -12,9 +12,8 @@ User=khadas
 Group=khadas
 # HDMI audio capture and the application journal for diagnostics.
 SupplementaryGroups=video input audio systemd-journal
-# The optional HTTPS listener uses port 443. Privileged changes go through
-# sudo and /usr/libexec/vim4-jetkvm, so NoNewPrivileges must stay unset.
-AmbientCapabilities=CAP_NET_BIND_SERVICE
+# Privileged changes use sudo and /usr/libexec/vim4-jetkvm, so
+# NoNewPrivileges must stay unset.
 StateDirectory=jetkvm
 StateDirectoryMode=0700
 WorkingDirectory=/var/lib/jetkvm

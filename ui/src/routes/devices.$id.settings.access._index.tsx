@@ -41,6 +41,7 @@ const loader: LoaderFunction = async () => {
 
 export default function SettingsAccessIndexRoute() {
   const loaderData = useLoaderData() as LocalDevice | null;
+  const localAuth = useCapability("local_auth");
 
   const { navigateTo } = useDeviceUiNavigation();
   const navigate = useNavigate();
@@ -210,7 +211,7 @@ export default function SettingsAccessIndexRoute() {
     <div className="space-y-4">
       <SettingsPageHeader title={m.access_title()} description={m.access_description()} />
 
-      {loaderData?.authMode && (
+      {localAuth && loaderData?.authMode && (
         <>
           <div className="space-y-4">
             <SettingsSectionHeader

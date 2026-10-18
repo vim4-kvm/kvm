@@ -581,6 +581,9 @@ func basicAuthProtectedMiddleware(requireDeveloperMode bool) gin.HandlerFunc {
 }
 
 func getBindAddress(listenPort int) string {
+	if platform.VIM4 {
+		return fmt.Sprintf("127.0.0.1:%d", listenPort)
+	}
 	// Determine the binding address based on the config
 	var bindAddress string
 	useIPv4 := config.NetworkConfig.IPv4Mode.String != "disabled"

@@ -439,7 +439,7 @@ func rpcGetDeviceCapabilities() ([]string, error) {
 	return []string{
 		"shell", "extensions", "usb_serial", "custom_edid", "upload_channel", "video_during_update",
 		"http_proxy", "domain", "mdns", "ipv6",
-		"tls", "local_loopback", "log_level", "tailscale",
+		"tls", "local_loopback", "local_auth", "log_level", "tailscale",
 		"cloud", "display", "usb_config", "time_sync", "url_media",
 	}, nil
 }

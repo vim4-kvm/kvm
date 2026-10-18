@@ -200,6 +200,9 @@ func stopWebSecureServer() {
 }
 
 func startWebSecureServer() {
+	if platform.VIM4 {
+		return
+	}
 	if tlsStarted {
 		websecureLogger.Info().Msg("Websecure server is already running, not starting it again")
 		return
@@ -208,6 +211,9 @@ func startWebSecureServer() {
 }
 
 func RunWebSecureServer() {
+	if platform.VIM4 {
+		return
+	}
 	for range startTLS {
 		websecureLogger.Info().Msg("Starting websecure server, as we have received a start signal")
 		if certStore == nil {

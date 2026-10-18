@@ -100,7 +100,7 @@ func mainVIM4() {
 func vim4Capabilities() []string {
 	capabilities := []string{
 		"shell", "custom_edid", "upload_channel", "video_during_update", "custom_bitrate",
-		"http_proxy", "mdns", "ipv6", "tls", "local_loopback", "log_level", "update_source",
+		"http_proxy", "mdns", "ipv6", "log_level", "update_source",
 	}
 	if vim4WifiAvailable() {
 		capabilities = append(capabilities, "wifi")
@@ -112,7 +112,7 @@ func vim4Capabilities() []string {
 // A hidden UI control is not an API boundary.
 func vim4HTTP(c *gin.Context) {
 	switch c.Request.URL.Path {
-	case "/cloud/register":
+	case "/cloud/register", "/auth/password-local", "/auth/local-password":
 		c.AbortWithStatusJSON(http.StatusNotImplemented, gin.H{"error": "unavailable on VIM4"})
 		return
 	}
@@ -125,6 +125,8 @@ func vim4HTTP(c *gin.Context) {
 // The management panel owns Tailscale for the whole board.
 func vim4RPCUnsupported(method string) bool {
 	switch method {
+	case "setTLSState", "setLocalLoopbackOnly":
+		return true
 	case "getTailscaleStatus", "getTailscaleControlURL", "setTailscaleControlURL",
 		"deregisterDevice", "setCloudUrl",
 		"setDisplayRotation", "getDisplayRotation", "setBacklightSettings", "getBacklightSettings",

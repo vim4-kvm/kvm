@@ -3,12 +3,47 @@
 package kvm
 
 import (
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/gin-gonic/gin"
 	"github.com/jetkvm/kvm/internal/native"
 )
+
+func TestManagerBackendIgnoresOldPublicListenerSettings(t *testing.T) {
+	previous := config
+	t.Cleanup(func() { config = previous })
+	cfg := getDefaultConfig()
+	if cfg.LocalAuthMode != "noPassword" || !cfg.LocalLoopbackOnly || cfg.TLSMode != "" {
+		t.Fatal("fresh or reset config bypasses the manager gateway")
+	}
+	cfg.LocalAuthMode = "password"
+	cfg.TLSMode = "custom"
+	cfg.LocalLoopbackOnly = false
+	normalizePlatformWebConfig(&cfg)
+	config = &cfg
+	if cfg.LocalAuthMode != "noPassword" || cfg.TLSMode != "" || !cfg.LocalLoopbackOnly {
+		t.Fatal("old config bypasses the manager gateway")
+	}
+	if got := getBindAddress(8081); got != "127.0.0.1:8081" {
+		t.Fatalf("backend address: %s", got)
+	}
+	for _, method := range []string{"setTLSState", "setLocalLoopbackOnly"} {
+		if !vim4RPCUnsupported(method) {
+			t.Fatalf("gateway-owned setting is mutable: %s", method)
+		}
+	}
+	router := gin.New()
+	router.Use(vim4HTTP)
+	router.POST("/auth/password-local", handleCreatePassword)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest("POST", "/auth/password-local", nil))
+	if response.Code != 501 || cfg.LocalAuthMode != "noPassword" {
+		t.Fatalf("application password can be enabled: status %d", response.Code)
+	}
+}
 
 func TestVIM4RejectsUnsupportedOperations(t *testing.T) {
 	for _, method := range []string{"setDisplayRotation", "setBacklightSettings", "setDCPowerState", "setActiveExtension",

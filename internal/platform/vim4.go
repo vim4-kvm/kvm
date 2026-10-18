@@ -10,5 +10,5 @@ const ConfigPath = StateDir + "/config.json"
 // the web UI separate from the account's own authorized_keys.
 const SSHKeyFile = "/home/khadas/.ssh/authorized_keys2"
 
-// vim4-manager owns port 80 and selects the KVM application.
-const HTTPPort = 8080
+// vim4-manager owns the public listeners and authenticates backend requests.
+const HTTPPort = 8081

@@ -188,7 +188,7 @@ var (
 )
 
 func getDefaultConfig() Config {
-	return Config{
+	cfg := Config{
 		CloudURL:             DefaultAPIURL,
 		UpdateAPIURL:         DefaultAPIURL,
 		CloudAppURL:          "https://app.jetkvm.com",
@@ -223,6 +223,8 @@ func getDefaultConfig() Config {
 			DebounceMs:        500,
 		},
 	}
+	normalizePlatformWebConfig(&cfg)
+	return cfg
 }
 
 var (
@@ -334,6 +336,7 @@ func LoadConfig() {
 	}
 
 	config = &loadedConfig
+	normalizePlatformWebConfig(config)
 
 	logging.GetRootLogger().UpdateLogLevel(config.DefaultLogLevel)
 

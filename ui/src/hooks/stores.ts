@@ -758,6 +758,7 @@ export type Capability =
   | "ipv6"
   | "tls" // HTTPS listener with a selectable certificate
   | "local_loopback" // web UI can be limited to the loopback interface
+  | "local_auth" // local password settings are owned by this application
   | "log_level" // default log level can be changed
   | "tailscale" // Tailscale client
   | "cloud" // JetKVM Cloud adoption on the Access page

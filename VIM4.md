@@ -22,17 +22,22 @@ helper `/usr/libexec/vim4-jetkvm` and its sudoers rule, but does not enable the
 service. Select JetKVM in the vim4-manager dashboard (port 80): it disables and
 stops `nanokvm.service`, then enables and starts this one. The units declare
 Conflicts= with each other because both use HDMI capture, the encoder, the HID
-endpoints and port **8080**. The HID udev rule comes from the vim4-nanokvm package.
+endpoints and backend port **8081**. The HID udev rule comes from the vim4-nanokvm package.
 
 Configuration lives in `/var/lib/jetkvm/config.json` (systemd StateDirectory);
 images, TLS certificates and downloaded updates live beside it.
+Package postinst migrates only local_loopback_only, localAuthMode and tls_mode
+in existing JSON, preserving other keys and password hashes. Startup also
+enforces the gateway settings for missing or old configuration files. HTTPPort
+is a VIM4 platform constant (8081); appliance defaults remain unchanged.
 
 Prerequisites: the vim4-vfmcap and vim4-amlvenc packages, vim4-kvm-hdmi.service,
 vim4-kvm-gadget.service, vim4-kvm-pd.service, and the eight/six/four-byte HID
 descriptors and `mass_storage.disk0` function created by the board gadget script.
 
 The application runs as **khadas** with video, input, audio and systemd-journal
-groups and CAP_NET_BIND_SERVICE for the optional HTTPS listener on 443. The
+groups. HTTP binds to 127.0.0.1:8081 behind vim4-manager's authenticated 8080
+gateway; VIM4 does not start a TLS listener. The
 vendor encoder uses `/tmp/vpu_mutex.map`: use the same account for encoder
 tests and do not delete the lock while an encoder is active or give the service
 a private /tmp.
@@ -84,7 +89,7 @@ or add them.
 | Hide host display when idle | Hot-plug low through the hdmirx debug interface; restored when a viewer connects and when the application stops |
 | Network | eth0 IPv4 DHCP/static and IPv6 modes through NetworkManager, DHCP lease details, renew, hostname, mDNS, HTTP proxy (application setting). A new static address redirects the browser. Domain, LLDP and JetKVM's time sources are not offered; chrony owns the clock |
 | Wi-Fi | NetworkManager profiles; Ethernet stays the managed interface, so static IPv4 settings never belong to a Wi-Fi network |
-| Access | Local password, HTTPS (self-signed or custom), loopback-only. JetKVM Cloud is not offered |
+| Access | Login belongs to vim4-manager; local password, TLS and listener controls are hidden and rejected. JetKVM Cloud is not offered |
 | Advanced | Developer mode, web terminal (khadas shell), SSH key in `~khadas/.ssh/authorized_keys2`, USB emulation, log level, diagnostics (journal), factory reset |
 | Updates | The administrator sets an update server; `GET {server}/releases` returns JetKVM's metadata format (`appVersion`, `appUrl`, `appHash`; no system component). Packages are installed without a JetKVM signature after their hash matches, then the board reboots. Version order includes the build number |
 | Tailscale | Managed for the whole board by vim4-manager, including installation and login; the application card is hidden and its RPCs are rejected. Existing package and login state are preserved |
