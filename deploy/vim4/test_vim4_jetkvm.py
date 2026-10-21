@@ -180,11 +180,31 @@ class SharedMediaTest(unittest.TestCase):
 
 
 class EdidTest(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(patch.object(helper.platform, 'release', return_value='5.15-test'))
+
     def test_tables_are_validated_and_padded(self):
         self.assertEqual(len(helper.edid_bytes(EDID)), 256)
         for value in ('', 'zz', EDID[:-2], '11' * 128, EDID + '00' * 129, 7):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 helper.edid_bytes(value)
+
+    def test_mainline_force_rejects_bad_checksum_before_disconnecting(self):
+        spec = importlib.util.spec_from_file_location(
+            'vim4video', Path(__file__).resolve().parents[3] / 'board/vim4video.py')
+        video = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(video)
+        data = bytearray.fromhex(EDID)
+        data[126] = 0
+        data[127] = (-sum(data[:127])) & 255
+        data[20] ^= 1
+        with patch.object(helper.platform, 'release', return_value='7.3-test'), \
+                patch.dict(sys.modules, {'vim4video': video}), patch.object(helper, 'locked'), \
+                patch.object(video, 'disable_edid') as disconnect, patch.object(video, 'set_edid') as load:
+            with self.assertRaisesRegex(ValueError, 'checksum'):
+                helper.edid_apply({'edid': data.hex(), 'force': True})
+            disconnect.assert_not_called()
+            load.assert_not_called()
 
     def test_loaded_table_is_not_reloaded_for_the_same_tvserver_run(self):
         with tempfile.TemporaryDirectory() as directory:

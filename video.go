@@ -126,7 +126,9 @@ func rpcReconnectHostDisplay() error {
 	}
 	edid := configuredVideoEDID()
 	if platform.VIM4 {
-		return vim4Helper(30*time.Second, "edid-apply", map[string]any{"edid": edid, "force": true}, nil)
+		return vim4WithCaptureStopped(func() error {
+			return vim4Helper(30*time.Second, "edid-apply", map[string]any{"edid": edid, "force": true}, nil)
+		})
 	}
 	return nativeInstance.VideoSetEDID(edid)
 }

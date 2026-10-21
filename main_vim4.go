@@ -246,6 +246,21 @@ var vim4HotplugLow atomic.Bool
 // native.DisabledEDID. The helper skips a table already loaded in this boot,
 // so restarting the application does not make the host renegotiate.
 func vim4SetEDID(edid string) error {
+	return vim4WithCaptureStopped(func() error { return vim4WriteEDID(edid) })
+}
+
+func vim4WithCaptureStopped(action func() error) error {
+	if os.Getenv("VIM4_VIDEO_BACKEND") == "wave5" && nativeInstance != nil {
+		capture, ok := nativeInstance.(interface{ WithVideoPaused(func() error) error })
+		if !ok {
+			return fmt.Errorf("mainline capture cannot release HDMI safely")
+		}
+		return capture.WithVideoPaused(action)
+	}
+	return action()
+}
+
+func vim4WriteEDID(edid string) error {
 	if edid == native.DisabledEDID {
 		if err := vim4Helper(10*time.Second, "hotplug", map[string]bool{"enabled": false}, nil); err != nil {
 			return err

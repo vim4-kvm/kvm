@@ -4,7 +4,7 @@ Requires=vim4-kvm-hdmi.service vim4-kvm-gadget.service vim4-kvm-pd.service
 After=network-online.target vim4-kvm-hdmi.service vim4-kvm-gadget.service vim4-kvm-pd.service
 Wants=network-online.target
 # Applications share HDMI capture, the encoder, HID endpoints and backend port 8081.
-Conflicts=nanokvm.service
+Conflicts=nanokvm.service one-kvm.service vim4-pikvm.service
 
 [Service]
 Type=simple
@@ -18,7 +18,7 @@ StateDirectory=jetkvm
 StateDirectoryMode=0700
 WorkingDirectory=/var/lib/jetkvm
 Environment=GST_PLUGIN_PATH=/usr/lib/vim4-kvm/gstreamer-1.0
-ExecStart=/opt/vim4-jetkvm/jetkvm
+ExecStart=/usr/libexec/vim4-kvm-run jetkvm
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=15

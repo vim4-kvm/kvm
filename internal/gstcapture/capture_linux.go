@@ -73,6 +73,16 @@ static int request_keyframe(GstElement *sink) {
     return gst_element_send_event(sink,
         gst_video_event_new_upstream_force_key_unit(GST_CLOCK_TIME_NONE, TRUE, 0));
 }
+static int int_property_value(const char *factory, const char *name, int *value) {
+    gst_init(NULL, NULL);
+    GstElement *element = gst_element_factory_make(factory, NULL);
+    if (!element) return 0;
+    GParamSpec *spec = g_object_class_find_property(G_OBJECT_GET_CLASS(element), name);
+    int found = spec && G_IS_PARAM_SPEC_INT(spec) && (spec->flags & G_PARAM_READABLE);
+    if (found) g_object_get(element, name, value, NULL);
+    gst_object_unref(element);
+    return found;
+}
 */
 import "C"
 
@@ -92,6 +102,16 @@ type Frame struct {
 	Duration      time.Duration
 	Width, Height int
 	Keyframe      bool
+}
+
+// IntPropertyValue queries device status without starting a capture pipeline.
+func IntPropertyValue(factory, property string) (int, bool) {
+	f, p := C.CString(factory), C.CString(property)
+	defer C.free(unsafe.Pointer(f))
+	defer C.free(unsafe.Pointer(p))
+	var value C.int
+	found := C.int_property_value(f, p, &value)
+	return int(value), found != 0
 }
 
 // IntPropertyRange inspects the loaded plugin without starting a pipeline.

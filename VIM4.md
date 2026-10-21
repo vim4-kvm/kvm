@@ -5,6 +5,12 @@ Khadas VIM4 Ubuntu ARM64. Board services own HDMI setup, USB gadget creation and
 USB-C PD negotiation; Ubuntu owns the network stack, clock and SSH. Preserve
 licenses and existing authorship.
 
+`vim4-kvm-run` selects the vendor GStreamer factories on 5.15 and the distinct
+`vim4v4l2src` / `vim4wave5enc` factories on the matched 7.x kernel. HDMI audio
+uses the corresponding ALSA card. Both kernels retain `/var/lib/jetkvm` and
+the shared image catalog. The board package must provide `vim4-runtime-api-1`
+and the matching mainline plugins; updating the application alone is insufficient.
+
 ## Build and install
 
 The workspace builds and packages this application as the `vim4-jetkvm` Ubuntu

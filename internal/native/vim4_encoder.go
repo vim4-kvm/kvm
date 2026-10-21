@@ -5,8 +5,11 @@ package native
 import (
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
+
+	"github.com/jetkvm/kvm/internal/gstcapture"
 )
 
 const (
@@ -38,10 +41,26 @@ func vim4Pipeline(codec int, quality float64, frameRate int) string {
 		name = "h265"
 	}
 	// Coalesce PLIs from several viewers into one forced IDR.
-	return fmt.Sprintf("vfmcapsrc ! queue max-size-buffers=3 max-size-bytes=0 max-size-time=0 ! "+
-		"amlvenc bitrate=%d gop=%d framerate=%d min-force-key-unit-interval=250000000 ! video/x-%s ! "+
+	source, encoder, gop := "vfmcapsrc", "amlvenc", vim4GOP
+	if os.Getenv("VIM4_VIDEO_BACKEND") == "wave5" {
+		source, encoder, gop = "vim4v4l2src", "vim4wave5enc", 0
+	}
+	return fmt.Sprintf("%s ! queue max-size-buffers=3 max-size-bytes=0 max-size-time=0 ! "+
+		"%s bitrate=%d gop=%d framerate=%d min-force-key-unit-interval=250000000 ! video/x-%s ! "+
 		"%sparse config-interval=-1 ! video/x-%s,stream-format=byte-stream,alignment=au ! appsink name=frames sync=false",
-		vim4Bitrate(quality), vim4GOP, frameRate, name, name, name)
+		source, encoder, vim4Bitrate(quality), gop, frameRate, name, name, name)
+}
+
+func vim4HDMIInfo() string {
+	if os.Getenv("VIM4_VIDEO_BACKEND") == "wave5" {
+		rate, ok := gstcapture.IntPropertyValue("vim4v4l2src", "input-rate")
+		if !ok {
+			return ""
+		}
+		return fmt.Sprintf("Frame Rate: %d\n", rate)
+	}
+	info, _ := os.ReadFile(hdmiInfoPath)
+	return string(info)
 }
 
 // hdmiFrameRate reads the receiver's rate, reported in hundredths of a frame

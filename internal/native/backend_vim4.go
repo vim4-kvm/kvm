@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -126,6 +125,19 @@ func (v *vim4Backend) VideoStop() error {
 	return nil
 }
 
+// Keep starts and encoder reconfiguration out until the HDMI operation has
+// completed. A reconnect loop can own DMA even before its first active frame.
+func (v *vim4Backend) WithVideoPaused(action func() error) error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	restart := v.runningLocked()
+	v.stopLocked()
+	if restart {
+		defer v.startLocked()
+	}
+	return action()
+}
+
 func (v *vim4Backend) runningLocked() bool {
 	if v.done == nil {
 		return false
@@ -174,8 +186,7 @@ func (v *vim4Backend) capture(ctx context.Context, done chan struct{}, codec int
 	defer close(done)
 	defer v.report(VideoState{Streaming: VideoStreamingStatusInactive})
 	for ctx.Err() == nil {
-		info, _ := os.ReadFile(hdmiInfoPath)
-		rate := hdmiFrameRate(string(info))
+		rate := hdmiFrameRate(vim4HDMIInfo())
 		if rate == 0 {
 			rate = vim4DefaultFrameRate
 		}
@@ -208,8 +219,7 @@ func (v *vim4Backend) runPipeline(ctx context.Context, codec int, quality float6
 			case <-pipelineCtx.Done():
 				return
 			case <-ticker.C:
-				info, _ := os.ReadFile(hdmiInfoPath)
-				if change.observe(rate, hdmiFrameRate(string(info))) {
+				if change.observe(rate, hdmiFrameRate(vim4HDMIInfo())) {
 					close(rateChanged)
 					cancel()
 					return

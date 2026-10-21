@@ -9,6 +9,7 @@ import fcntl
 import ipaddress
 import json
 import os
+import platform
 from pathlib import Path
 import re
 import shutil
@@ -223,6 +224,16 @@ def load_edid(edid):
 def edid_apply(req):
     edid = edid_bytes(req.get('edid'))
     with locked('edid'):
+        if platform.release().startswith('7.'):
+            sys.path.insert(0, '/usr/lib/vim4-kvm/python')
+            from vim4video import set_edid, disable_edid, validate_edid
+            edid = edid[:128 * (1 + edid[126])]
+            # Reject malformed uploads before a forced disconnect touches HPD.
+            validate_edid(edid)
+            if req.get('force') is True:
+                disable_edid()
+            set_edid(edid)
+            return {'loaded': True}
         marker = f'{tvserver_run()} {edid.hex()}'
         # Loading pulses hot-plug. Skip a table this tvserver run already has
         # so application restarts do not make the host renegotiate its display.
@@ -241,6 +252,12 @@ def hotplug(req):
     if type(enabled) is not bool:
         raise ValueError('enabled must be boolean')
     with locked('edid'):
+        if platform.release().startswith('7.'):
+            from vim4video import disable_edid
+            if not enabled:
+                disable_edid()
+            # vim4SetEDID loads the requested table before asserting HPD.
+            return {}
         (HDMIRX / 'debug').write_text(f'hpd{int(enabled)} {DEBUG_PORT}\n')
     return {}
 

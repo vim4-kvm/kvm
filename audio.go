@@ -168,6 +168,9 @@ func openCaptureWithBackoff(ctx context.Context) (*audio.ALSACapture, error) {
 // captures the HDMI receiver's audio instead, also 48 kHz stereo S16LE.
 func alsaCaptureDevice() string {
 	if platform.VIM4 {
+		if os.Getenv("VIM4_VIDEO_BACKEND") == "wave5" {
+			return "hw:VIM4HDMIRX,0"
+		}
 		return "hw:AMLAUGESOUND,0"
 	}
 	if card, ok := findALSACard("UAC1Gadget"); ok {
