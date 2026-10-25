@@ -13,6 +13,11 @@ and the matching mainline plugins; updating the application alone is insufficien
 
 ## Build and install
 
+Native-HDR 5.15 uses the shared `vim4vdin1src` for independent SDR capture from
+VDIN1, retaining `amlvenc` for both codecs. The board launcher supplies
+`VIM4_SECONDARY_HDMI_CAPTURE=1` and the private standard V4L2 plugin. Install
+the matching board, capture and encoder packages before updating the app.
+
 The workspace builds and packages this application as the `vim4-jetkvm` Ubuntu
 component (see the workspace `docs/board-tools.md`):
 

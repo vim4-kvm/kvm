@@ -44,6 +44,8 @@ func vim4Pipeline(codec int, quality float64, frameRate int) string {
 	source, encoder, gop := "vfmcapsrc", "amlvenc", vim4GOP
 	if os.Getenv("VIM4_VIDEO_BACKEND") == "wave5" {
 		source, encoder, gop = "vim4v4l2src", "vim4wave5enc", 0
+	} else if os.Getenv("VIM4_SECONDARY_HDMI_CAPTURE") == "1" {
+		source = "vim4vdin1src"
 	}
 	return fmt.Sprintf("%s ! queue max-size-buffers=3 max-size-bytes=0 max-size-time=0 ! "+
 		"%s bitrate=%d gop=%d framerate=%d min-force-key-unit-interval=250000000 ! video/x-%s ! "+
