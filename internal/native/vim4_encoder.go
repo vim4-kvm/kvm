@@ -68,16 +68,19 @@ func vim4HDMIInfo() string {
 // hdmiFrameRate reads the receiver's rate, reported in hundredths of a frame
 // per second, from /sys/class/hdmirx/hdmirx0/info. It returns 0 without a signal.
 func hdmiFrameRate(info string) int {
-	for _, line := range strings.Split(info, "\n") {
-		key, value, ok := strings.Cut(line, ":")
-		if !ok || strings.TrimSpace(key) != "Frame Rate" {
-			continue
+	// VRR cadence must not repeatedly reopen an encoder with a fixed budget.
+	for _, name := range []string{"Capture Frame Rate", "Frame Rate"} {
+		for _, line := range strings.Split(info, "\n") {
+			key, value, ok := strings.Cut(line, ":")
+			if !ok || strings.TrimSpace(key) != name {
+				continue
+			}
+			hundredths, err := strconv.Atoi(strings.TrimSpace(value))
+			if err == nil && hundredths >= 100 && hundredths <= 12000 {
+				return (hundredths + 50) / 100
+			}
+			return 0
 		}
-		hundredths, err := strconv.Atoi(strings.TrimSpace(value))
-		if err == nil && hundredths >= 100 && hundredths <= 12000 {
-			return (hundredths + 50) / 100
-		}
-		return 0
 	}
 	return 0
 }

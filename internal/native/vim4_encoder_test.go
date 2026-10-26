@@ -44,11 +44,14 @@ func TestVIM4PipelineSelectsCodec(t *testing.T) {
 
 func TestHDMIFrameRate(t *testing.T) {
 	for info, want := range map[string]int{
-		"Frame Rate: 5994\nColor Depth: 8": 60,
-		"  Frame Rate :  2500":             25,
-		"Frame Rate: 0":                    0,
-		"Frame Rate: abc":                  0,
-		"no signal":                        0,
+		"Frame Rate: 5994\nColor Depth: 8":            60,
+		"  Frame Rate :  2500":                        25,
+		"Frame Rate: 0":                               0,
+		"Frame Rate: abc":                             0,
+		"no signal":                                   0,
+		"Frame Rate: 4800\nCapture Frame Rate: 12000": 120,
+		"Capture Frame Rate: 12000\nFrame Rate: 9000": 120,
+		"Capture Frame Rate: 0\nFrame Rate: 4800":     0,
 	} {
 		if got := hdmiFrameRate(info); got != want {
 			t.Errorf("%q: %d, want %d", info, got, want)

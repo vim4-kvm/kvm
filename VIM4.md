@@ -18,6 +18,10 @@ VDIN1, retaining `amlvenc` for both codecs. The board launcher supplies
 `VIM4_SECONDARY_HDMI_CAPTURE=1` and the private standard V4L2 plugin. Install
 the matching board, capture and encoder packages before updating the app.
 
+When the vendor receiver supplies `Capture Frame Rate`, encoder budgets use
+that base rate rather than each measured VRR frame period. Older kernels keep
+the measured-rate fallback. This does not modify EDID or qualify actual VRR.
+
 The workspace builds and packages this application as the `vim4-jetkvm` Ubuntu
 component (see the workspace `docs/board-tools.md`):
 
