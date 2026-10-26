@@ -3,6 +3,7 @@
 package kvm
 
 import (
+	"encoding/hex"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -110,8 +111,9 @@ func TestVIM4EDIDPresetsKeepPlatformDefaultFirst(t *testing.T) {
 		t.Fatalf("unexpected preset order: %v", presets[0].Name)
 	}
 	for _, preset := range vim4EDIDPresets {
-		if len(preset.EDID) != 512 {
-			t.Errorf("%s is not a two-block EDID", preset.Name)
+		data, err := hex.DecodeString(preset.EDID)
+		if err != nil || len(data) < 128 || len(data) != 128*(1+int(data[126])) {
+			t.Errorf("%s has invalid EDID length or extension count", preset.Name)
 		}
 	}
 }

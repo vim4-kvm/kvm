@@ -195,14 +195,17 @@ def usb_emulation(req):
 # HDMI EDID and hot-plug
 
 def edid_bytes(value):
-    if not isinstance(value, str) or not re.fullmatch(r'(?:[0-9A-Fa-f]{2}){128}(?:[0-9A-Fa-f]{2}){0,128}', value):
-        raise ValueError('EDID must be 128 or 256 bytes of hexadecimal')
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9A-Fa-f]{256,1024}', value):
+        raise ValueError('EDID must be 128 to 512 bytes of hexadecimal')
     edid = bytes.fromhex(value)
-    if len(edid) not in (128, 256):
-        raise ValueError('EDID must contain one or two 128-byte blocks')
+    if len(edid) not in (128, 256, 384, 512):
+        raise ValueError('EDID must contain one to four 128-byte blocks')
     if edid[:8] != bytes([0, 255, 255, 255, 255, 255, 255, 0]):
         raise ValueError('Missing EDID header')
-    return edid + bytes(256 - len(edid))
+    if edid[126] != len(edid) // 128 - 1 or any(
+            sum(edid[o:o + 128]) % 256 for o in range(0, len(edid), 128)):
+        raise ValueError('EDID extension count or checksum is invalid')
+    return edid + bytes(max(256 - len(edid), 0))
 
 
 def tvserver_run():
@@ -213,7 +216,14 @@ def load_edid(edid):
     # Fill the 1.4 and 2.0 slots so tvserver's later version selection
     # cannot return the host to a vendor table.
     with (HDMIRX / 'edid_with_port').open('wb', buffering=0) as sysfs:
-        sysfs.write(bytes([EDID_PORT]) + edid + edid)
+        if len(edid) <= 256:
+            payload = bytes([EDID_PORT]) + edid + edid
+        else:
+            legacy = bytearray(edid[:256])
+            legacy[126] = 1
+            legacy[127] = -sum(legacy[:127]) % 256
+            payload = bytes([0x20 | EDID_PORT]) + legacy + edid.ljust(512, b'\0')
+        sysfs.write(payload)
     fd = os.open(HDMIRX_DEVICE, os.O_RDWR)
     try:
         fcntl.ioctl(fd, HDMI_IOC_EDID_UPDATE_WITH_PORT, bytes([EDID_PORT]))
