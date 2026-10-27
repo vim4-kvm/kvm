@@ -58,21 +58,3 @@ func TestHDMIFrameRate(t *testing.T) {
 		}
 	}
 }
-
-func TestRateChangeIsDebounced(t *testing.T) {
-	var change rateChange
-	for i, rate := range []int{50, 0, 50, 50} {
-		if change.observe(60, rate) {
-			t.Fatalf("reopened after sample %d", i)
-		}
-	}
-	if !change.observe(60, 50) {
-		t.Fatal("third consecutive changed rate did not reopen")
-	}
-	change = rateChange{}
-	for _, rate := range []int{50, 30, 50} {
-		if change.observe(60, rate) {
-			t.Fatal("alternating rates reopened the encoder")
-		}
-	}
-}

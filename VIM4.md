@@ -30,6 +30,14 @@ When the vendor receiver supplies `Capture Frame Rate`, encoder budgets use
 that base rate rather than each measured VRR frame period. Older kernels keep
 the measured-rate fallback. This does not modify EDID or qualify actual VRR.
 
+Vendor input monitoring checks cached RX lock (`hw_info` bit 16), geometry,
+color, depth, EOTF and base rate every 100 ms. Two matching changed readings
+reopen capture without replacing the WebRTC session. Missing encoded buffers
+for three seconds also restart capture; static pixels do not. AVC reserves its
+contiguous workspace before capture and drops the bootstrap reference after the
+first encoded frame. The bounded capture pool and raw queue leave CMA for source
+mode changes. HDMI resynchronization still interrupts new source frames.
+
 The workspace builds and packages this application as the `vim4-jetkvm` Ubuntu
 component (see the workspace `docs/board-tools.md`):
 

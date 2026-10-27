@@ -78,6 +78,33 @@ func TestCancellationAndReopen(t *testing.T) {
 	}
 }
 
+func TestStalledPipelineReleasesWithoutEOS(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := Run(ctx, "appsrc is-live=true ! appsink name=frames async=false", nil, func(Frame) error {
+		t.Error("empty source produced a frame")
+		return nil
+	})
+	if err == nil || ctx.Err() != nil || err.Error() != "capture produced no frames for 3 seconds" {
+		t.Fatalf("stalled capture did not terminate before cancellation: %v", err)
+	}
+}
+
+func TestSlowPrerollAndReopen(t *testing.T) {
+	for range 3 {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		frames := 0
+		err := Run(ctx, "videotestsrc num-buffers=3 ! identity sleep-time=100000 ! appsink name=frames sync=false", nil, func(Frame) error {
+			frames++
+			return nil
+		})
+		cancel()
+		if !errors.Is(err, io.EOF) || frames != 3 {
+			t.Fatalf("slow startup ended early: frames=%d error=%v", frames, err)
+		}
+	}
+}
+
 func TestInvalidPipeline(t *testing.T) {
 	for _, description := range []string{"missing_vim4_element ! appsink name=frames", "videotestsrc ! fakesink name=frames"} {
 		if err := Run(context.Background(), description, nil, func(Frame) error { return nil }); err == nil {

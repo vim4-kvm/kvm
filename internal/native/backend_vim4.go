@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -214,40 +216,68 @@ func (v *vim4Backend) capture(ctx context.Context, done chan struct{}, codec int
 	defer close(done)
 	defer v.report(VideoState{Streaming: VideoStreamingStatusInactive})
 	for ctx.Err() == nil {
-		rate := hdmiFrameRate(vim4HDMIInfo())
-		if rate == 0 {
-			rate = vim4DefaultFrameRate
-		}
-		err := v.runPipeline(ctx, codec, quality, rate, height)
-		if ctx.Err() != nil {
-			return
-		}
-		if err != nil {
-			nativeLogger.Warn().Err(err).Msg("VIM4 capture stopped; retrying")
-			v.report(VideoState{Streaming: VideoStreamingStatusInactive, Error: "no_signal"})
+		input := parseInputMode(vim4HDMIInfo())
+		if input.rate == 0 {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(time.Second):
+			case <-time.After(100 * time.Millisecond):
+				continue
+			}
+		}
+		err := v.runPipeline(ctx, codec, quality, input, height)
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil && parseInputMode(vim4HDMIInfo()) == input {
+			nativeLogger.Warn().Err(err).Msg("VIM4 capture stopped; retrying")
+			v.report(VideoState{Streaming: VideoStreamingStatusInactive, Error: "no_signal"})
+			delay := time.Second
+			if errors.Is(err, io.EOF) {
+				// A source EOS can race with the RX status update. Retry it
+				// promptly while retaining bounded retries for a stopped source.
+				delay = 100 * time.Millisecond
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(delay):
 			}
 		}
 	}
 }
 
-func (v *vim4Backend) runPipeline(ctx context.Context, codec int, quality float64, rate, height int) error {
+func (v *vim4Backend) runPipeline(ctx context.Context, codec int, quality float64, input inputMode, height int) error {
+	// Reserve contiguous workspace before VDIN1 allocates its capture pool.
+	// Drop our reference after the SDK owns it, allowing final teardown to reset
+	// the driver before a different codec SDK starts.
+	var encoderMemory *os.File
+	if codec == 0 && os.Getenv("VIM4_SECONDARY_HDMI_CAPTURE") == "1" {
+		var err error
+		encoderMemory, err = os.OpenFile("/dev/amvenc_multi", os.O_RDWR, 0)
+		if err != nil {
+			return fmt.Errorf("reserve encoder workspace: %w", err)
+		}
+	}
+	defer func() {
+		if encoderMemory != nil {
+			encoderMemory.Close()
+		}
+	}()
+	rate := input.rate
 	pipelineCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	rateChanged := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
+		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
-		var change rateChange
+		var change inputChange
 		for {
 			select {
 			case <-pipelineCtx.Done():
 				return
 			case <-ticker.C:
-				if change.observe(rate, hdmiFrameRate(vim4HDMIInfo())) {
+				if change.observe(input, parseInputMode(vim4HDMIInfo())) {
 					close(rateChanged)
 					cancel()
 					return
@@ -264,6 +294,10 @@ func (v *vim4Backend) runPipeline(ctx context.Context, codec int, quality float6
 	lastState := VideoState{}
 	frameCount := 0
 	err := gstcapture.Run(pipelineCtx, vim4Pipeline(codec, quality, rate, height), v.keyframes, func(frame gstcapture.Frame) error {
+		if encoderMemory != nil {
+			encoderMemory.Close()
+			encoderMemory = nil
+		}
 		duration := frame.Duration
 		if duration <= 0 {
 			duration = time.Second / time.Duration(rate)
@@ -284,7 +318,7 @@ func (v *vim4Backend) runPipeline(ctx context.Context, codec int, quality float6
 	})
 	select {
 	case <-rateChanged:
-		nativeLogger.Info().Int("previous_fps", rate).Msg("VIM4 HDMI frame rate changed; reopening the encoder")
+		nativeLogger.Info().Int("previous_fps", rate).Msg("VIM4 HDMI input changed; reopening capture")
 		return nil
 	default:
 	}

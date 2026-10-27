@@ -58,7 +58,7 @@ func vim4Pipeline(codec int, quality float64, frameRate, height int) string {
 		}
 		scale = fmt.Sprintf("vim4scale height=%d width-alignment=%d ! queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 ! ", height, alignment)
 	}
-	return fmt.Sprintf("%s ! queue max-size-buffers=3 max-size-bytes=0 max-size-time=0 ! "+
+	return fmt.Sprintf("%s ! queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 ! "+
 		"%s%s bitrate=%d gop=%d framerate=%d min-force-key-unit-interval=250000000 ! video/x-%s ! "+
 		"%sparse config-interval=-1 ! video/x-%s,stream-format=byte-stream,alignment=au ! appsink name=frames sync=false",
 		source, scale, encoder, vim4Bitrate(quality), gop, frameRate, name, name, name)
@@ -80,7 +80,13 @@ func vim4HDMIInfo() string {
 		}
 		return fmt.Sprintf("Frame Rate: %d\n", rate)
 	}
+	if !vendorSignalReady() {
+		return ""
+	}
 	info, _ := os.ReadFile(hdmiInfoPath)
+	if !vendorSignalReady() {
+		return ""
+	}
 	return string(info)
 }
 
@@ -102,20 +108,4 @@ func hdmiFrameRate(info string) int {
 		}
 	}
 	return 0
-}
-
-// rateChange debounces a changed HDMI rate before the encoder is reopened;
-// the budget of a running vendor encoder cannot change.
-type rateChange struct{ candidate, count int }
-
-func (c *rateChange) observe(current, rate int) bool {
-	if rate == 0 || rate == current {
-		c.candidate, c.count = 0, 0
-		return false
-	}
-	if rate != c.candidate {
-		c.candidate, c.count = rate, 0
-	}
-	c.count++
-	return c.count >= 3
 }
