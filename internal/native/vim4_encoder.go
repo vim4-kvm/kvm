@@ -36,6 +36,9 @@ func validVIM4Quality(factor float64) bool {
 
 // vim4Pipeline builds the capture and hardware encoder pipeline. codec 1 is H.265.
 func vim4Pipeline(codec int, quality float64, frameRate int) string {
+	if codec == 1 && H265Main10() {
+		return fmt.Sprintf("vim4h265src bitrate=%d gop=%d framerate=%d ! appsink name=frames sync=false", vim4Bitrate(quality), vim4GOP, frameRate)
+	}
 	name := "h264"
 	if codec == 1 {
 		name = "h265"
@@ -51,6 +54,14 @@ func vim4Pipeline(codec int, quality float64, frameRate int) string {
 		"%s bitrate=%d gop=%d framerate=%d min-force-key-unit-interval=250000000 ! video/x-%s ! "+
 		"%sparse config-interval=-1 ! video/x-%s,stream-format=byte-stream,alignment=au ! appsink name=frames sync=false",
 		source, encoder, vim4Bitrate(quality), gop, frameRate, name, name, name)
+}
+
+func H265Main10() bool {
+	if os.Getenv("VIM4_VIDEO_BACKEND") == "wave5" || os.Getenv("VIM4_SECONDARY_HDMI_CAPTURE") != "1" {
+		return false
+	}
+	capable, ok := gstcapture.IntPropertyValue("vim4h265src", "hdr-capable")
+	return ok && capable == 1
 }
 
 func vim4HDMIInfo() string {

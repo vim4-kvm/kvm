@@ -15,6 +15,17 @@ import (
 
 const hdmiInfoPath = "/sys/class/hdmirx/hdmirx0/info"
 
+var videoColor atomic.Uint32
+
+// Read only by the RTP writer synchronously called for the current frame.
+func VideoColorSpace() []byte {
+	color := videoColor.Load()
+	if color == 0 {
+		return nil
+	}
+	return []byte{byte(color >> 24), byte(color >> 16), byte(color >> 8), byte(color)}
+}
+
 // The headless backend does not run the local display loop or native supervisor.
 // The system service owns HDMI source setup; this backend owns only the encoder.
 type vim4Backend struct {
@@ -248,6 +259,8 @@ func (v *vim4Backend) runPipeline(ctx context.Context, codec int, quality float6
 			lastState = state
 		}
 		if v.opts.OnVideoFrameReceived != nil {
+			color := frame.ColorSpace
+			videoColor.Store(uint32(color[0])<<24 | uint32(color[1])<<16 | uint32(color[2])<<8 | uint32(color[3]))
 			v.opts.OnVideoFrameReceived(frame.Data, duration)
 		}
 		return nil

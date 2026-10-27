@@ -5,6 +5,7 @@ package gstcapture
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -37,6 +38,32 @@ func TestTimingAndEOS(t *testing.T) {
 	})
 	if !errors.Is(err, io.EOF) || frames != 3 {
 		t.Fatalf("frames=%d error=%v", frames, err)
+	}
+}
+
+func TestColorimetryFollowsEachPipeline(t *testing.T) {
+	for _, test := range []struct {
+		caps  string
+		color [4]byte
+	}{
+		{"bt2100-pq", [4]byte{9, 16, 9, 16}},
+		{"bt709", [4]byte{1, 1, 1, 16}},
+		{"bt2100-pq", [4]byte{9, 16, 9, 16}},
+	} {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		frames := 0
+		description := fmt.Sprintf("videotestsrc num-buffers=1 ! video/x-raw,format=I420,width=16,height=16,colorimetry=%s ! appsink name=frames sync=false", test.caps)
+		err := Run(ctx, description, nil, func(frame Frame) error {
+			frames++
+			if frame.ColorSpace != test.color {
+				t.Errorf("caps=%s color=%v want=%v", test.caps, frame.ColorSpace, test.color)
+			}
+			return nil
+		})
+		cancel()
+		if !errors.Is(err, io.EOF) || frames != 1 {
+			t.Fatalf("frames=%d error=%v", frames, err)
+		}
 	}
 }
 

@@ -41,6 +41,17 @@ static void release_sample(GstSample *sample, GstMapInfo *map) {
     gst_buffer_unmap(gst_sample_get_buffer(sample), map);
     gst_sample_unref(sample);
 }
+static void sample_color(GstSample *sample, guint8 *out) {
+    GstCaps *caps = gst_sample_get_caps(sample);
+    if (!caps || !gst_caps_get_size(caps)) return;
+    const char *name = gst_structure_get_string(gst_caps_get_structure(caps, 0), "colorimetry");
+    GstVideoColorimetry color;
+    if (!name || !gst_video_colorimetry_from_string(&color, name)) return;
+    out[0] = gst_video_color_primaries_to_iso(color.primaries);
+    out[1] = gst_video_transfer_function_to_iso(color.transfer);
+    out[2] = gst_video_color_matrix_to_iso(color.matrix);
+    out[3] = color.range == GST_VIDEO_COLOR_RANGE_0_255 ? 0x20 : 0x10;
+}
 static char *pipeline_error(GstElement *pipeline) {
     GstBus *bus = gst_element_get_bus(pipeline);
     GstMessage *msg = gst_bus_pop_filtered(bus, GST_MESSAGE_ERROR);
@@ -102,6 +113,7 @@ type Frame struct {
 	Duration      time.Duration
 	Width, Height int
 	Keyframe      bool
+	ColorSpace    [4]byte
 }
 
 // IntPropertyValue queries device status without starting a capture pipeline.
@@ -167,6 +179,11 @@ func Run(ctx context.Context, description string, keyframes <-chan struct{}, con
 	// Release DMA-bufs and the hardware encoder even on callback failure.
 	defer C.gst_element_set_state(pipeline, C.GST_STATE_NULL)
 	if C.gst_element_set_state(pipeline, C.GST_STATE_PLAYING) == C.GST_STATE_CHANGE_FAILURE {
+		if msg := C.pipeline_error(pipeline); msg != nil {
+			err := fmt.Errorf("start capture: %s", C.GoString(msg))
+			C.g_free(C.gpointer(msg))
+			return err
+		}
 		return errors.New("pipeline refused PLAYING state")
 	}
 	previous := uint64(^uint64(0))
@@ -206,6 +223,11 @@ func Run(ctx context.Context, description string, keyframes <-chan struct{}, con
 		}
 		frame := Frame{Data: C.GoBytes(unsafe.Pointer(mapped.data), C.int(mapped.size)),
 			PTS: time.Duration(pts), HasPTS: uint64(pts) != ^uint64(0), Width: int(width), Height: int(height), Keyframe: keyframe != 0}
+		var color [4]C.guint8
+		C.sample_color(sample, &color[0])
+		for i := range color {
+			frame.ColorSpace[i] = byte(color[i])
+		}
 		frame.Duration = frameDuration(previous, uint64(pts), uint64(duration))
 		previous = uint64(pts)
 		C.release_sample(sample, &mapped)

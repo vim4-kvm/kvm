@@ -212,6 +212,9 @@ func readVideoRTCP(sender *webrtc.RTPSender) {
 // Always validates against the browser's SDP offer to prevent negotiation failure.
 func resolveCodec(offerSDP string) string {
 	browserSupportsH265 := strings.Contains(strings.ToUpper(offerSDP), "H265")
+	if main10Video() {
+		browserSupportsH265 = supportsMain10(offerSDP)
+	}
 
 	switch config.VideoCodecPreference {
 	case "h265":
@@ -245,7 +248,7 @@ func (s *Session) ExchangeOffer(offerStr string) (string, error) {
 	s.codecMimeType = codec
 
 	s.VideoTrack, err = webrtc.NewTrackLocalStaticSample(
-		webrtc.RTPCodecCapability{MimeType: codec}, "video", "kvm")
+		videoCapability(codec), "video", "kvm")
 	if err != nil {
 		return "", err
 	}
@@ -504,6 +507,9 @@ func newSession(config SessionConfig) (*Session, error) {
 		scopedLogger.Warn().Err(err).Msg("Failed to register default codecs")
 		return nil, err
 	}
+	if err := registerMain10(mediaEngine); err != nil {
+		return nil, err
+	}
 	// Negotiate the playout-delay RTP header extension on both audio and
 	// video. The interceptor below stamps min=max=0 on every outgoing
 	// packet so Chrome's receive-side jitter buffer can't ratchet upward.
@@ -526,6 +532,9 @@ func newSession(config SessionConfig) (*Session, error) {
 		return nil, err
 	}
 	interceptorRegistry.Add(playoutdelay.NewFactory())
+	if err := registerColorSpace(mediaEngine, interceptorRegistry); err != nil {
+		return nil, err
+	}
 
 	api := webrtc.NewAPI(
 		webrtc.WithSettingEngine(webrtcSettingEngine),

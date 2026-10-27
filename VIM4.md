@@ -14,9 +14,17 @@ and the matching mainline plugins; updating the application alone is insufficien
 ## Build and install
 
 Native-HDR 5.15 uses the shared `vim4vdin1src` for independent SDR capture from
-VDIN1, retaining `amlvenc` for both codecs. The board launcher supplies
+VDIN1. H.265 uses the shared `vim4h265src`: global conversion disabled plus
+PQ input selects hardware Main10; SDR and converted input use the original
+eight-bit encoder. H.264 remains SDR. WebRTC negotiates Main10 explicitly and
+uses actual encoded-frame colorimetry; browsers without Main10 use H.264 SDR.
+The board launcher supplies
 `VIM4_SECONDARY_HDMI_CAPTURE=1` and the private standard V4L2 plugin. Install
 the matching board, capture and encoder packages before updating the app.
+
+The encoder package must provide `vim4-hevc-hdr-api-1` and the launcher must
+select its private Mali runtime. Preference/input changes rebuild capture
+after releasing the previous codec. Safari remote HDR remains unqualified.
 
 When the vendor receiver supplies `Capture Frame Rate`, encoder budgets use
 that base rate rather than each measured VRR frame period. Older kernels keep
