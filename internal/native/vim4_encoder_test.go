@@ -22,14 +22,14 @@ func TestVIM4CustomBitrateBounds(t *testing.T) {
 			t.Fatalf("accepted invalid quality factor %v", factor)
 		}
 	}
-	if !validVIM4Quality(5) || !strings.Contains(vim4Pipeline(0, 5, 60), "bitrate=60000") {
+	if !validVIM4Quality(5) || !strings.Contains(vim4Pipeline(0, 5, 60, 0), "bitrate=60000") {
 		t.Fatal("60 Mbps custom bitrate did not reach the encoder")
 	}
 }
 
 func TestVIM4PipelineSelectsCodec(t *testing.T) {
-	h264 := vim4Pipeline(0, 1, 60)
-	h265 := vim4Pipeline(1, 0.5, 50)
+	h264 := vim4Pipeline(0, 1, 60, 0)
+	h265 := vim4Pipeline(1, 0.5, 50, 0)
 	for _, part := range []string{"bitrate=12000", "framerate=60", "video/x-h264", "h264parse"} {
 		if !strings.Contains(h264, part) {
 			t.Errorf("H.264 pipeline lacks %q: %s", part, h264)

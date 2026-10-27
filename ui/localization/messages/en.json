@@ -1,5 +1,9 @@
 {
     "$schema": "https://inlang.com/schema/inlang-message-format",
+    "video_output_height_title": "Output resolution",
+    "video_output_height_description": "Limit stream height while preserving aspect ratio. Applies to SDR and HDR; changing it briefly reconnects video for all viewers.",
+    "video_output_height_native": "Native input size",
+    "video_output_height_failed": "Could not read or change output resolution: {error}",
     "access_adopt_kvm": "Adopt KVM to Cloud",
     "access_adopted_message": "Your device is adopted to the Cloud",
     "access_auth_mode_no_password": "Current mode: No password",

@@ -4,6 +4,23 @@ package native
 
 import "testing"
 
+func TestVIM4OutputHeightRejectsInvalidSelectionWithoutChangingActiveSetting(t *testing.T) {
+	backend, err := NewBackend(NativeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scaler := backend.(*vim4Backend)
+	if err := scaler.VideoSetOutputHeight(720); err != nil {
+		t.Fatal(err)
+	}
+	if err := scaler.VideoSetOutputHeight(719); err == nil {
+		t.Fatal("accepted an unsupported output height")
+	}
+	if scaler.height != 720 {
+		t.Fatal("invalid selection changed the active height")
+	}
+}
+
 func TestVIM4CustomBitrateSurvivesBackendInitialization(t *testing.T) {
 	backend, err := NewBackend(NativeOptions{DefaultQualityFactor: 5})
 	if err != nil {

@@ -35,9 +35,9 @@ func validVIM4Quality(factor float64) bool {
 }
 
 // vim4Pipeline builds the capture and hardware encoder pipeline. codec 1 is H.265.
-func vim4Pipeline(codec int, quality float64, frameRate int) string {
+func vim4Pipeline(codec int, quality float64, frameRate, height int) string {
 	if codec == 1 && H265Main10() {
-		return fmt.Sprintf("vim4h265src bitrate=%d gop=%d framerate=%d ! appsink name=frames sync=false", vim4Bitrate(quality), vim4GOP, frameRate)
+		return fmt.Sprintf("vim4h265src bitrate=%d gop=%d framerate=%d height=%d ! appsink name=frames sync=false", vim4Bitrate(quality), vim4GOP, frameRate, height)
 	}
 	name := "h264"
 	if codec == 1 {
@@ -45,15 +45,23 @@ func vim4Pipeline(codec int, quality float64, frameRate int) string {
 	}
 	// Coalesce PLIs from several viewers into one forced IDR.
 	source, encoder, gop := "vfmcapsrc", "amlvenc", vim4GOP
+	scale := ""
 	if os.Getenv("VIM4_VIDEO_BACKEND") == "wave5" {
-		source, encoder, gop = "vim4v4l2src", "vim4wave5enc", 0
+		source, encoder, gop = fmt.Sprintf("vim4v4l2src height=%d", height), "vim4wave5enc", 0
 	} else if os.Getenv("VIM4_SECONDARY_HDMI_CAPTURE") == "1" {
 		source = "vim4vdin1src"
 	}
+	if height > 0 && os.Getenv("VIM4_VIDEO_BACKEND") != "wave5" {
+		alignment := 2
+		if codec == 1 {
+			alignment = 16
+		}
+		scale = fmt.Sprintf("vim4scale height=%d width-alignment=%d ! queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 ! ", height, alignment)
+	}
 	return fmt.Sprintf("%s ! queue max-size-buffers=3 max-size-bytes=0 max-size-time=0 ! "+
-		"%s bitrate=%d gop=%d framerate=%d min-force-key-unit-interval=250000000 ! video/x-%s ! "+
+		"%s%s bitrate=%d gop=%d framerate=%d min-force-key-unit-interval=250000000 ! video/x-%s ! "+
 		"%sparse config-interval=-1 ! video/x-%s,stream-format=byte-stream,alignment=au ! appsink name=frames sync=false",
-		source, encoder, vim4Bitrate(quality), gop, frameRate, name, name, name)
+		source, scale, encoder, vim4Bitrate(quality), gop, frameRate, name, name, name)
 }
 
 func H265Main10() bool {

@@ -37,6 +37,7 @@ type vim4Backend struct {
 	status    atomic.Uint32
 	codec     int
 	quality   float64
+	height    int
 	keyframes chan struct{}
 }
 
@@ -73,6 +74,22 @@ func (v *vim4Backend) VideoGetQualityFactor() (float64, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.quality, nil
+}
+
+// Output scaling changes only the stream, never HDMI timing or EDID.
+func (v *vim4Backend) VideoSetOutputHeight(height int) error {
+	switch height {
+	case 0, 480, 720, 1080, 1440, 1700, 2160:
+	default:
+		return fmt.Errorf("unsupported output height %d", height)
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.height != height {
+		v.height = height
+		v.restartLocked()
+	}
+	return nil
 }
 
 // VideoSetQualityFactor selects the encoder bitrate. The vendor encoder cannot
@@ -165,7 +182,7 @@ func (v *vim4Backend) startLocked() {
 	ctx, cancel := context.WithCancel(context.Background())
 	v.cancel = cancel
 	v.done = make(chan struct{})
-	go v.capture(ctx, v.done, v.codec, v.quality)
+	go v.capture(ctx, v.done, v.codec, v.quality, v.height)
 }
 
 func (v *vim4Backend) stopLocked() {
@@ -193,7 +210,7 @@ func (v *vim4Backend) report(state VideoState) {
 
 // capture keeps the pipeline running until cancellation. A pipeline error,
 // such as a lost HDMI signal, or a changed source rate reopens the encoder.
-func (v *vim4Backend) capture(ctx context.Context, done chan struct{}, codec int, quality float64) {
+func (v *vim4Backend) capture(ctx context.Context, done chan struct{}, codec int, quality float64, height int) {
 	defer close(done)
 	defer v.report(VideoState{Streaming: VideoStreamingStatusInactive})
 	for ctx.Err() == nil {
@@ -201,7 +218,7 @@ func (v *vim4Backend) capture(ctx context.Context, done chan struct{}, codec int
 		if rate == 0 {
 			rate = vim4DefaultFrameRate
 		}
-		err := v.runPipeline(ctx, codec, quality, rate)
+		err := v.runPipeline(ctx, codec, quality, rate, height)
 		if ctx.Err() != nil {
 			return
 		}
@@ -217,7 +234,7 @@ func (v *vim4Backend) capture(ctx context.Context, done chan struct{}, codec int
 	}
 }
 
-func (v *vim4Backend) runPipeline(ctx context.Context, codec int, quality float64, rate int) error {
+func (v *vim4Backend) runPipeline(ctx context.Context, codec int, quality float64, rate, height int) error {
 	pipelineCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	rateChanged := make(chan struct{})
@@ -246,7 +263,7 @@ func (v *vim4Backend) runPipeline(ctx context.Context, codec int, quality float6
 	nativeLogger.Info().Int("codec", codec).Int("bitrate_kbps", vim4Bitrate(quality)).Int("fps", rate).Msg("VIM4 encoder starting")
 	lastState := VideoState{}
 	frameCount := 0
-	err := gstcapture.Run(pipelineCtx, vim4Pipeline(codec, quality, rate), v.keyframes, func(frame gstcapture.Frame) error {
+	err := gstcapture.Run(pipelineCtx, vim4Pipeline(codec, quality, rate, height), v.keyframes, func(frame gstcapture.Frame) error {
 		duration := frame.Duration
 		if duration <= 0 {
 			duration = time.Second / time.Duration(rate)

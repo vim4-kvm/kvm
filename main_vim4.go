@@ -99,7 +99,7 @@ func mainVIM4() {
 // vim4Capabilities lists the optional features this platform implements.
 func vim4Capabilities() []string {
 	capabilities := []string{
-		"shell", "custom_edid", "upload_channel", "video_during_update", "custom_bitrate",
+		"shell", "custom_edid", "upload_channel", "video_during_update", "custom_bitrate", "output_scaling",
 		"http_proxy", "mdns", "ipv6", "log_level", "update_source",
 	}
 	if vim4WifiAvailable() {

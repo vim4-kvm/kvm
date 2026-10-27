@@ -1,5 +1,9 @@
 {
     "$schema": "https://inlang.com/schema/inlang-message-format",
+    "video_output_height_title": "输出分辨率",
+    "video_output_height_description": "限制视频高度并保持宽高比，适用于 SDR 和 HDR。修改后所有观看者的视频会短暂重连。",
+    "video_output_height_native": "输入原始尺寸",
+    "video_output_height_failed": "无法读取或修改输出分辨率：{error}",
     "access_adopt_kvm": "将 KVM 接入云端",
     "access_adopted_message": "您的设备已接入云端。",
     "access_auth_mode_no_password": "当前模式：无密码",

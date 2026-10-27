@@ -98,6 +98,12 @@ func initNative(systemVersion *semver.Version, appVersion *semver.Version) {
 	if err := nativeInstance.Start(); err != nil {
 		nativeLogger.Fatal().Err(err).Msg("failed to start native proxy")
 	}
+	if scaler, ok := nativeInstance.(videoOutputScaler); ok {
+		if err := scaler.VideoSetOutputHeight(config.VideoOutputHeight); err != nil {
+			nativeLogger.Error().Err(err).Msg("invalid saved output height; using native size")
+			config.VideoOutputHeight = 0
+		}
+	}
 	go func() {
 		_ = reapplyHostDisplayAdvertisement("native_started")
 	}()

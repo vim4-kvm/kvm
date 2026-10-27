@@ -1456,6 +1456,8 @@ var rpcHandlers = map[string]RPCHandler{
 	"setStreamQualityFactor":     {Func: rpcSetStreamQualityFactor, Params: []string{"factor"}},
 	"getSupportedVideoCodecs":    {Func: rpcGetSupportedVideoCodecs},
 	"getVideoCodecPreference":    {Func: rpcGetVideoCodecPreference},
+	"getVideoOutputHeight":       {Func: rpcGetVideoOutputHeight},
+	"setVideoOutputHeight":       {Func: rpcSetVideoOutputHeight, Params: []string{"height"}},
 	"setVideoCodecPreference":    {Func: rpcSetVideoCodecPreference, Params: []string{"codec"}},
 	"getAutoUpdateState":         {Func: rpcGetAutoUpdateState},
 	"setAutoUpdateState":         {Func: rpcSetAutoUpdateState, Params: []string{"enabled"}},

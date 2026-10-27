@@ -86,6 +86,16 @@ helper validates every request itself; sudoers allows only this program.
 
 ## Feature mapping
 
+Video settings expose an independent output-height limit: native, 480, 720, 1080,
+1440, 1700 or 2160. Width follows input aspect ratio, without upscaling; the
+preference is saved across service restarts. Changes reopen only capture/encoding.
+On 5.15, SDR uses the common `vim4scale` GE2D DMA path (HEVC width rounded down
+to 16 pixels), while HDR delegates the same height to `vim4h265src`/Mali/P010.
+The board launcher must select contiguous V4L2 DMA for vendor capture; deploy
+matching board/capture/encoder packages before the application. On 7.3, the
+existing `vim4v4l2src height` capture scaler handles the limit; this new UI has
+not yet been qualified on that kernel.
+
 VIM4's video settings also expose a 1000–60000 kbps custom bitrate input.
 The original 12/6/1.2 Mbps presets remain alongside additional presets up to
 60 Mbps. One control groups the native preset dropdown, a 0.1 Mbps slider and

@@ -48,10 +48,13 @@ const browserCodecOptions = h265Supported
 export default function SettingsVideoRoute() {
   const customEdid = useCapability("custom_edid");
   const customBitrate = useCapability("custom_bitrate");
+  const outputScaling = useCapability("output_scaling");
   const { send } = useJsonRpc();
   const [streamQuality, setStreamQuality] = useState("1");
   const [streamQualityLoading, setStreamQualityLoading] = useState(true);
   const [codecPreference, setCodecPreference] = useState("auto");
+  const [outputHeight, setOutputHeight] = useState("0");
+  const [outputHeightLoading, setOutputHeightLoading] = useState(true);
   const [supportedCodecs, setSupportedCodecs] = useState<string[] | null>(null);
   const [codecLoadFailed, setCodecLoadFailed] = useState(false);
   const [codecLoadAttempt, setCodecLoadAttempt] = useState(0);
@@ -76,6 +79,30 @@ export default function SettingsVideoRoute() {
   const [edidLoading, setEdidLoading] = useState(true);
   // The device owns the preset list, so the UI has no copy of it.
   const [edidPresets, setEdidPresets] = useState<EDIDPreset[]>([]);
+
+  useEffect(() => {
+    if (!outputScaling) return;
+    void send("getVideoOutputHeight", {}, (resp: JsonRpcResponse) => {
+      setOutputHeightLoading(false);
+      if ("error" in resp) {
+        notifications.error(m.video_output_height_failed({ error: resp.error.data || m.unknown_error() }));
+        return;
+      }
+      setOutputHeight(String(resp.result));
+    });
+  }, [send, outputScaling]);
+
+  const handleOutputHeightChange = (height: string) => {
+    setOutputHeightLoading(true);
+    void send("setVideoOutputHeight", { height: Number(height) }, (resp: JsonRpcResponse) => {
+      setOutputHeightLoading(false);
+      if ("error" in resp) {
+        notifications.error(m.video_output_height_failed({ error: resp.error.data || m.unknown_error() }));
+        return;
+      }
+      setOutputHeight(height);
+    });
+  };
   const { debugMode } = useSettingsStore();
   // Video enhancement settings from store
   const {
@@ -305,6 +332,24 @@ export default function SettingsVideoRoute() {
                 value={streamQuality}
                 options={streamQualityOptions}
                 onChange={e => handleStreamQualityChange(e.target.value)}
+              />
+            </SettingsItem>}
+
+            {outputScaling && <SettingsItem
+              title={m.video_output_height_title()}
+              description={m.video_output_height_description()}
+              loading={outputHeightLoading}
+            >
+              <SelectMenuBasic
+                size="SM"
+                label=""
+                value={outputHeight}
+                disabled={outputHeightLoading}
+                options={[
+                  { value: "0", label: m.video_output_height_native() },
+                  ...[480, 720, 1080, 1440, 1700, 2160].map(height => ({ value: String(height), label: `${height}p` })),
+                ]}
+                onChange={e => handleOutputHeightChange(e.target.value)}
               />
             </SettingsItem>}
 
