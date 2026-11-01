@@ -65,9 +65,6 @@ func vim4Pipeline(codec int, quality float64, frameRate, height int) string {
 }
 
 func H265Main10() bool {
-	if os.Getenv("VIM4_VIDEO_BACKEND") == "wave5" || os.Getenv("VIM4_SECONDARY_HDMI_CAPTURE") != "1" {
-		return false
-	}
 	capable, ok := gstcapture.IntPropertyValue("vim4h265src", "hdr-capable")
 	return ok && capable == 1
 }

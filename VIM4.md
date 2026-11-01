@@ -13,6 +13,14 @@ and the matching mainline plugins; updating the application alone is insufficien
 
 ## Build and install
 
+The P0-5 candidate asks the common `vim4h265src` capability property on both
+backends instead of excluding Wave5 in application code. The shared source
+qualifies AMLY, HDR10 controls, P010/Main10 negotiation and plugin caps without
+streaming or checking a release name. Its GPU source implements height-only
+aspect-preserving HDR scaling; global mapping changes retain the existing
+stop/rebuild flow. Feature-branch/offline checks are not application or GPU-stack
+board acceptance; consult the workspace P0-5 evidence before deployment.
+
 Native-HDR 5.15 uses the shared `vim4vdin1src` for independent SDR capture from
 VDIN1. H.265 uses the shared `vim4h265src`: global conversion disabled plus
 PQ input selects hardware Main10; SDR and converted input use the original
