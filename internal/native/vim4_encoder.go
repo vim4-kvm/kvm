@@ -36,22 +36,27 @@ func validVIM4Quality(factor float64) bool {
 
 // vim4Pipeline builds the capture and hardware encoder pipeline. codec 1 is H.265.
 func vim4Pipeline(codec int, quality float64, frameRate, height int) string {
+	wave5 := os.Getenv("VIM4_VIDEO_BACKEND") == "wave5"
+	gop := vim4GOP
+	if wave5 {
+		gop = 0
+	}
 	if codec == 1 && H265Main10() {
-		return fmt.Sprintf("vim4h265src bitrate=%d gop=%d framerate=%d height=%d ! appsink name=frames sync=false", vim4Bitrate(quality), vim4GOP, frameRate, height)
+		return fmt.Sprintf("vim4h265src bitrate=%d gop=%d framerate=%d height=%d ! appsink name=frames sync=false", vim4Bitrate(quality), gop, frameRate, height)
 	}
 	name := "h264"
 	if codec == 1 {
 		name = "h265"
 	}
 	// Coalesce PLIs from several viewers into one forced IDR.
-	source, encoder, gop := "vfmcapsrc", "amlvenc", vim4GOP
+	source, encoder := "vfmcapsrc", "amlvenc"
 	scale := ""
-	if os.Getenv("VIM4_VIDEO_BACKEND") == "wave5" {
-		source, encoder, gop = fmt.Sprintf("vim4v4l2src height=%d", height), "vim4wave5enc", 0
+	if wave5 {
+		source, encoder = fmt.Sprintf("vim4v4l2src height=%d", height), "vim4wave5enc"
 	} else if os.Getenv("VIM4_SECONDARY_HDMI_CAPTURE") == "1" {
 		source = "vim4vdin1src"
 	}
-	if height > 0 && os.Getenv("VIM4_VIDEO_BACKEND") != "wave5" {
+	if height > 0 && !wave5 {
 		alignment := 2
 		if codec == 1 {
 			alignment = 16
