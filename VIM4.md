@@ -11,6 +11,9 @@ uses the corresponding ALSA card. Both kernels retain `/var/lib/jetkvm` and
 the shared image catalog. The board package must provide `vim4-runtime-api-1`
 and the matching mainline plugins; updating the application alone is insufficient.
 
+On Wave5, both H.264 and H.265 use GOP 0 with cyclic refresh disabled.
+A new viewer or a PLI/FIR requests an IDR.
+
 ## Build and install
 
 The P0-5 candidate asks the common `vim4h265src` capability property on both
@@ -130,7 +133,7 @@ or add them.
 
 | Feature | VIM4 behavior |
 | --- | --- |
-| Video | vfmcapsrc → amlvenc → parser → appsink. H.264 and H.265 (codec preference and browser support decide). Quality factor 1/0.5/0.1 = 12/6/1.2 Mbps. GOP 120 with forced IDR on PLI/FIR and for viewers joining a running stream. The encoder budget uses the HDMI frame rate and reopens when it changes; pipeline errors retry every second |
+| Video | Vendor backend: vfmcapsrc → amlvenc → parser → appsink. H.264 and H.265 (codec preference and browser support decide). Quality factor 1/0.5/0.1 = 12/6/1.2 Mbps. Vendor GOP 120 with forced IDR on PLI/FIR and for viewers joining a running stream. The encoder budget uses the HDMI frame rate and reopens when it changes; pipeline errors retry every second |
 | Audio | HDMI receiver `hw:AMLAUGESOUND,0` (48 kHz stereo) through JetKVM's G.722/PCMU encoder. The board HDMI service routes TDM-B to hdmirx |
 | Keyboard, mouse, macros, paste, jiggler | Existing HID endpoints; horizontal scrolling is unavailable because the board's descriptors have no AC Pan |
 | Virtual media | Upload (HTTP and data channel), image list, CD-ROM and Disk mounting, eject. Mounting from a URL is hidden (`url_media`): the kernel has no NBD driver |
