@@ -650,9 +650,7 @@ func newSession(config SessionConfig) (*Session, error) {
 			if !isConnected {
 				isConnected = true
 				onActiveSessionsChanged()
-				if incrActiveSessions() == 1 {
-					onFirstSessionConnected(session)
-				}
+				connectSessionVideo(session, incrActiveSessions())
 				onSessionConnected(session)
 				if mqttManager != nil {
 					mqttManager.publishSessionsState()
@@ -711,10 +709,6 @@ func onActiveSessionsChanged() {
 	requestDisplayUpdate(false, "active_sessions_changed")
 }
 
-// onFirstSessionConnected runs once on the 0→1 active-session edge. Video
-// capture is a shared pipeline; starting it again on a handoff connect (count
-// 1→2) would issue redundant native start calls and re-run the sleep-mode
-// re-lock wait while video is already streaming.
 func sessionVideoCodecType(session *Session) int {
 	if session.codecMimeType == webrtc.MimeTypeH265 {
 		return 1
@@ -760,10 +754,14 @@ func releaseVideoPause(session *Session) {
 	}
 }
 
-func onFirstSessionConnected(session *Session) {
-	stopVideoSleepModeTicker()
-	_ = setHostDisplayAdvertised(true, "first_session_connected", false)
-	startNativeVideoForSession(session)
+func connectSessionVideo(session *Session, active int) {
+	if active == 1 {
+		stopVideoSleepModeTicker()
+		_ = setHostDisplayAdvertised(true, "first_session_connected", false)
+		startNativeVideoForSession(session)
+	} else if requester, ok := nativeInstance.(interface{ VideoRequestKeyframe() }); ok {
+		requester.VideoRequestKeyframe()
+	}
 }
 
 // onSessionConnected runs per session when ICE reaches Connected. Uses the

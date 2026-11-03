@@ -13,6 +13,24 @@ import (
 	"github.com/jetkvm/kvm/internal/native"
 )
 
+type joiningViewerNative struct {
+	native.NativeInterface
+	requests int
+}
+
+func (n *joiningViewerNative) VideoRequestKeyframe() { n.requests++ }
+
+func TestAdditionalViewerRequestsKeyframeWithoutRestartingVideo(t *testing.T) {
+	original := nativeInstance
+	t.Cleanup(func() { nativeInstance = original })
+	backend := &joiningViewerNative{}
+	nativeInstance = backend
+	connectSessionVideo(&Session{}, 2)
+	if backend.requests != 1 {
+		t.Fatalf("keyframe requests = %d, want 1", backend.requests)
+	}
+}
+
 func TestManagerBackendIgnoresOldPublicListenerSettings(t *testing.T) {
 	previous := config
 	t.Cleanup(func() { config = previous })
